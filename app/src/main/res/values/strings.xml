@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">Yaraan</string>
+    <string name="no_internet_title">No Internet Connection</string>
+    <string name="no_internet_msg">Please check your network connection and try again.</string>
+    <string name="retry">Retry Connection</string>
+</resources>

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/white"
+    android:fitsSystemWindows="false">
+
+    <!-- 1. WebView (Full Screen) -->
+    <WebView
+        android:id="@+id/webview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="invisible" />
+
+    <!-- 2. Offline Fallback Screen -->
+    <LinearLayout
+        android:id="@+id/offline_screen"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:background="@color/white"
+        android:padding="24dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/offline_image"
+            android:layout_width="220dp"
+            android:layout_height="220dp"
+            android:src="@drawable/no_internet"
+            android:contentDescription="@string/no_internet_title"
+            android:scaleType="fitCenter" />
+
+        <TextView
+            android:id="@+id/offline_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/no_internet_title"
+            android:textColor="@color/text_color"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:layout_marginTop="24dp"
+            android:gravity="center" />
+
+        <TextView
+            android:id="@+id/offline_message"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/no_internet_msg"
+            android:textColor="#666666"
+            android:textSize="15sp"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp" />
+
+        <Button
+            android:id="@+id/btn_retry"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="32dp"
+            android:layout_marginStart="32dp"
+            android:layout_marginEnd="32dp"
+            android:text="@string/retry"
+            android:textColor="@color/btn_text"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:backgroundTint="@color/btn_bg"
+            app:cornerRadius="8dp" />
+    </LinearLayout>
+
+    <!-- 3. Splash Screen Overlay -->
+    <RelativeLayout
+        android:id="@+id/splash_screen"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/splash_bg"
+        android:clickable="true"
+        android:focusable="true">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:layout_centerInParent="true">
+
+            <ImageView
+                android:id="@+id/splash_icon"
+                android:layout_width="140dp"
+                android:layout_height="140dp"
+                android:src="@drawable/app_icon"
+                android:contentDescription="@string/app_name"
+                android:scaleType="fitCenter" />
+
+            <TextView
+                android:id="@+id/splash_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/app_name"
+                android:textColor="@color/purple_500"
+                android:textSize="36sp"
+                android:textStyle="bold"
+                android:layout_marginTop="16dp"
+                android:letterSpacing="0.05"
+                android:fontFamily="sans-serif-medium" />
+        </LinearLayout>
+    </RelativeLayout>
+
+</RelativeLayout>
