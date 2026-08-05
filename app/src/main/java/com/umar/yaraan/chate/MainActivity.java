@@ -25,11 +25,14 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.Toast;
 
 import androidx.activity.OnBackPressedCallback;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -50,6 +53,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int PERMISSION_REQUEST_CODE = 1001;
     private static final int FILE_CHOOSER_REQUEST_CODE = 1002;
 
+    private FrameLayout webViewContainer;
     private WebView webView;
     private RelativeLayout splashScreen;
     private LinearLayout offlineScreen;
@@ -78,7 +82,15 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         // Initialize UI components
+        webViewContainer = findViewById(R.id.webview_container);
         webView = findViewById(R.id.webview);
+
+        // Apply dynamic status bar top padding to the WebView container
+        ViewCompat.setOnApplyWindowInsetsListener(webViewContainer, (v, insets) -> {
+            int statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top;
+            v.setPadding(0, statusBarHeight, 0, 0);
+            return insets;
+        });
         splashScreen = findViewById(R.id.splash_screen);
         offlineScreen = findViewById(R.id.offline_screen);
         btnRetry = findViewById(R.id.btn_retry);

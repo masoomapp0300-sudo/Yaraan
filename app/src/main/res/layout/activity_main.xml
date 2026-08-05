@@ -6,12 +6,19 @@
     android:background="@color/white"
     android:fitsSystemWindows="false">
 
-    <!-- 1. WebView (Full Screen) -->
-    <WebView
-        android:id="@+id/webview"
+    <!-- 1. WebView Container with top padding slot -->
+    <FrameLayout
+        android:id="@+id/webview_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:visibility="invisible" />
+        android:background="@android:color/transparent">
+
+        <WebView
+            android:id="@+id/webview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="invisible" />
+    </FrameLayout>
 
     <!-- 2. Offline Fallback Screen -->
     <LinearLayout
