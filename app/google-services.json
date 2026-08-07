@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "740464208491",
+    "firebase_url": "https://yaraan-voice-chat-f7b85-default-rtdb.firebaseio.com",
+    "project_id": "yaraan-voice-chat-f7b85",
+    "storage_bucket": "yaraan-voice-chat-f7b85.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:740464208491:android:7034c6b6bf2d6d2ca09f2e",
+        "android_client_info": {
+          "package_name": "com.umar.yaraan"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "740464208491-0fo2r348qo2ovbrl9b6e7aig3gj2rvpq.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.umar.yaraan",
+            "certificate_hash": "70e4ca2b3a0fda0cb60151e6cafce561f53b6bff"
+          }
+        },
+        {
+          "client_id": "740464208491-54vrc980qpudcftbv02rkb6tta9l3k79.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.umar.yaraan",
+            "certificate_hash": "63c480d8efa2a09cb2b1474ffb6192317c071a01"
+          }
+        },
+        {
+          "client_id": "740464208491-m435f9ucgi85qt57oh39ee3go2u0t8kq.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.umar.yaraan",
+            "certificate_hash": "d866e7533a11383f8e6eb290d7cd4187c640ba7f"
+          }
+        },
+        {
+          "client_id": "740464208491-r63hohlm9o2lvc40f8gffitrbe6pceq8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA_06bFtGC54BqB1OoGBU4nAyPABIWsGow"
+        }
+      ]
+    }
+  ],
+  "configuration_version": "1"
+}

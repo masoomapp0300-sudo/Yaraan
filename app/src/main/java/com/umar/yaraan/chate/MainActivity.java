@@ -26,19 +26,36 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
+import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.VideoView;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+
+import com.google.android.gms.auth.api.signin.GoogleSignIn;
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
+import com.google.android.gms.auth.api.signin.GoogleSignInClient;
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
+import com.google.android.gms.common.api.ApiException;
+import com.google.android.gms.tasks.Task;
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.auth.AuthCredential;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.auth.GoogleAuthProvider;
 
 import java.io.File;
 import java.io.IOException;
@@ -53,12 +70,32 @@ public class MainActivity extends AppCompatActivity {
     private static final String TARGET_URL = "https://yaraan.online";
     private static final int PERMISSION_REQUEST_CODE = 1001;
     private static final int FILE_CHOOSER_REQUEST_CODE = 1002;
+    private static final int GOOGLE_SIGN_IN_REQUEST_CODE = 1003;
 
     private FrameLayout webViewContainer;
     private WebView webView;
     private RelativeLayout splashScreen;
     private LinearLayout offlineScreen;
     private Button btnRetry;
+
+    // Native Login Elements
+    private RelativeLayout loginScreenContainer;
+    private VideoView videoView;
+    private EditText etEmail, etPassword;
+    private Button btnNativeLogin;
+    private TextView btnForgotPassword, btnToggleSignup, tvToggleInfo;
+    private LinearLayout btnGoogleSignin;
+    private RelativeLayout glassLoadingOverlay;
+
+    private boolean isSignUpMode = false;
+
+    // Firebase & Auth Client variables
+    private FirebaseAuth mAuth;
+    private GoogleSignInClient mGoogleSignInClient;
+
+    // Tokens to inject
+    private String currentIdToken = null;
+    private long currentExpirationTime = 0;
 
     // File upload variables
     private ValueCallback<Uri[]> filePathCallback;
@@ -77,6 +114,17 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // Initialize Firebase
+        FirebaseApp.initializeApp(this);
+        mAuth = FirebaseAuth.getInstance();
+
+        // Configure Google Sign-In Options (Using Web Client ID from google-services.json)
+        GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestIdToken("740464208491-r63hohlm9o2lvc40f8gffitrbe6pceq8.apps.googleusercontent.com")
+                .requestEmail()
+                .build();
+        mGoogleSignInClient = GoogleSignIn.getClient(this, gso);
+
         // 1. Configure Full-Screen Transparent Status Bar
         configureFullScreen();
 
@@ -92,9 +140,30 @@ public class MainActivity extends AppCompatActivity {
             v.setPadding(0, statusBarHeight, 0, 0);
             return insets;
         });
+
         splashScreen = findViewById(R.id.splash_screen);
         offlineScreen = findViewById(R.id.offline_screen);
         btnRetry = findViewById(R.id.btn_retry);
+
+        // Initialize Login UI Components
+        loginScreenContainer = findViewById(R.id.login_screen_container);
+        videoView = findViewById(R.id.video_view);
+        etEmail = findViewById(R.id.et_email);
+        etPassword = findViewById(R.id.et_password);
+        btnNativeLogin = findViewById(R.id.btn_native_login);
+        btnForgotPassword = findViewById(R.id.btn_forgot_password);
+        btnToggleSignup = findViewById(R.id.btn_toggle_signup);
+        tvToggleInfo = findViewById(R.id.tv_toggle_info);
+        btnGoogleSignin = findViewById(R.id.btn_google_signin);
+        glassLoadingOverlay = findViewById(R.id.glass_loading_overlay);
+
+        // Apply Realtime Glassmorphic Blur to Loading card on Android 12+ (API 31+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            View glassCard = findViewById(R.id.glass_loading_card);
+            if (glassCard != null) {
+                glassCard.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(12f, 12f, android.graphics.Shader.TileMode.CLAMP));
+            }
+        }
 
         // 2. Setup WebView and Settings
         setupWebView();
@@ -102,8 +171,8 @@ public class MainActivity extends AppCompatActivity {
         // 3. Setup Back Button Callback
         setupBackButton();
 
-        // 4. Retry connection click handler
-        btnRetry.setOnClickListener(v -> attemptLoadUrl());
+        // 4. Setup Click Listeners for Login UI
+        setupLoginListeners();
 
         // 5. Request necessary runtime permissions
         checkAndRequestPermissions();
@@ -111,8 +180,8 @@ public class MainActivity extends AppCompatActivity {
         // Register dynamic network callback for auto-reconnect
         registerNetworkCallback();
 
-        // 6. Start loading
-        attemptLoadUrl();
+        // 6. Check Auth and start flow
+        checkAuthAndStart();
     }
 
     private void configureFullScreen() {
@@ -124,14 +193,208 @@ public class MainActivity extends AppCompatActivity {
                     View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
             );
             window.setStatusBarColor(Color.TRANSPARENT);
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                // Ensure status bar icons are visible on light splash background
-                window.getDecorView().setSystemUiVisibility(
-                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-                );
-            }
+            setStatusBarLightIcons(false); // Light icons on transparent dark background by default
         }
+    }
+
+    private void setStatusBarLightIcons(boolean isLight) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Window window = getWindow();
+            WindowInsetsControllerCompat controller = new WindowInsetsControllerCompat(window, window.getDecorView());
+            controller.setAppearanceLightStatusBars(isLight);
+        }
+    }
+
+    private void playBackgroundVideo() {
+        if (videoView != null) {
+            runOnUiThread(() -> {
+                try {
+                    Uri videoUri = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.login_bg);
+                    videoView.setVideoURI(videoUri);
+                    videoView.setOnPreparedListener(mp -> {
+                        mp.setLooping(true);
+                        videoView.start();
+                    });
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (loginScreenContainer != null && loginScreenContainer.getVisibility() == View.VISIBLE) {
+            playBackgroundVideo();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (videoView != null && videoView.isPlaying()) {
+            videoView.pause();
+        }
+    }
+
+    private void checkAuthAndStart() {
+        FirebaseUser user = mAuth.getCurrentUser();
+        if (user != null) {
+            // User is authenticated. Fetch token and load the website.
+            fetchTokenAndLoadWeb(user);
+        } else {
+            // Not authenticated. Show Login UI.
+            runOnUiThread(() -> {
+                splashScreen.setVisibility(View.GONE);
+                loginScreenContainer.setVisibility(View.VISIBLE);
+                setStatusBarLightIcons(false); // Light icons over dark video background
+                playBackgroundVideo();
+            });
+        }
+    }
+
+    private void fetchTokenAndLoadWeb(FirebaseUser user) {
+        runOnUiThread(() -> {
+            glassLoadingOverlay.setVisibility(View.VISIBLE);
+            setStatusBarLightIcons(false); // keep status bar elegant during loading
+        });
+
+        user.getIdToken(true).addOnCompleteListener(task -> {
+            if (task.isSuccessful() && task.getResult() != null) {
+                currentIdToken = task.getResult().getToken();
+                currentExpirationTime = task.getResult().getExpirationTimestamp() * 1000;
+
+                runOnUiThread(() -> {
+                    loginScreenContainer.setVisibility(View.GONE);
+                    if (videoView != null && videoView.isPlaying()) {
+                        videoView.stopPlayback();
+                    }
+                    attemptLoadUrl();
+                });
+            } else {
+                runOnUiThread(() -> {
+                    glassLoadingOverlay.setVisibility(View.GONE);
+                    Toast.makeText(MainActivity.this, "Failed to retrieve secure session token. Please sign in again.", Toast.LENGTH_LONG).show();
+                    mAuth.signOut();
+                    loginScreenContainer.setVisibility(View.VISIBLE);
+                    setStatusBarLightIcons(false);
+                    playBackgroundVideo();
+                });
+            }
+        });
+    }
+
+    private void setupLoginListeners() {
+        // Toggle Sign Up Mode
+        btnToggleSignup.setOnClickListener(v -> {
+            isSignUpMode = !isSignUpMode;
+            if (isSignUpMode) {
+                btnNativeLogin.setText("Create Account");
+                tvToggleInfo.setText("Already have an account? ");
+                btnToggleSignup.setText("Log In");
+                btnForgotPassword.setVisibility(View.GONE);
+            } else {
+                btnNativeLogin.setText("Log In");
+                tvToggleInfo.setText("Don't have an account? ");
+                btnToggleSignup.setText("Create Account");
+                btnForgotPassword.setVisibility(View.VISIBLE);
+            }
+        });
+
+        // Native Login Button Handler
+        btnNativeLogin.setOnClickListener(v -> {
+            String email = etEmail.getText().toString().trim();
+            String password = etPassword.getText().toString().trim();
+
+            if (email.isEmpty() || password.isEmpty()) {
+                Toast.makeText(this, "Please fill in all email and password fields.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (password.length() < 6) {
+                Toast.makeText(this, "Password must be at least 6 characters.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.VISIBLE));
+
+            if (isSignUpMode) {
+                // Firebase Create User
+                mAuth.createUserWithEmailAndPassword(email, password)
+                        .addOnCompleteListener(this, task -> {
+                            if (task.isSuccessful()) {
+                                FirebaseUser user = mAuth.getCurrentUser();
+                                if (user != null) {
+                                    fetchTokenAndLoadWeb(user);
+                                }
+                            } else {
+                                runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
+                                Toast.makeText(MainActivity.this, "Registration failed: " +
+                                        (task.getException() != null ? task.getException().getMessage() : "Unknown Error"),
+                                        Toast.LENGTH_LONG).show();
+                            }
+                        });
+            } else {
+                // Firebase Login
+                mAuth.signInWithEmailAndPassword(email, password)
+                        .addOnCompleteListener(this, task -> {
+                            if (task.isSuccessful()) {
+                                FirebaseUser user = mAuth.getCurrentUser();
+                                if (user != null) {
+                                    fetchTokenAndLoadWeb(user);
+                                }
+                            } else {
+                                runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
+                                Toast.makeText(MainActivity.this, "Authentication failed: " +
+                                        (task.getException() != null ? task.getException().getMessage() : "Invalid credentials"),
+                                        Toast.LENGTH_LONG).show();
+                            }
+                        });
+            }
+        });
+
+        // Google Sign-In Click
+        btnGoogleSignin.setOnClickListener(v -> {
+            runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.VISIBLE));
+            Intent signInIntent = mGoogleSignInClient.getSignInIntent();
+            startActivityForResult(signInIntent, GOOGLE_SIGN_IN_REQUEST_CODE);
+        });
+
+        // Forgot Password Click
+        btnForgotPassword.setOnClickListener(v -> {
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("Reset Password");
+            builder.setMessage("Enter your email address below to receive password recovery instructions:");
+
+            final EditText input = new EditText(this);
+            input.setInputType(android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+            input.setPadding(32, 16, 32, 16);
+            builder.setView(input);
+
+            builder.setPositiveButton("Send Link", (dialog, which) -> {
+                String email = input.getText().toString().trim();
+                if (!email.isEmpty()) {
+                    mAuth.sendPasswordResetEmail(email)
+                            .addOnCompleteListener(task -> {
+                                if (task.isSuccessful()) {
+                                    Toast.makeText(MainActivity.this, "Password reset email sent successfully.", Toast.LENGTH_SHORT).show();
+                                } else {
+                                    Toast.makeText(MainActivity.this, "Failed to send reset email: " +
+                                            (task.getException() != null ? task.getException().getMessage() : "Unknown Error"),
+                                            Toast.LENGTH_LONG).show();
+                                }
+                            });
+                } else {
+                    Toast.makeText(MainActivity.this, "Email address cannot be empty.", Toast.LENGTH_SHORT).show();
+                }
+            });
+            builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
+            builder.show();
+        });
+
+        // Retry Connection click handler
+        btnRetry.setOnClickListener(v -> attemptLoadUrl());
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -178,38 +441,105 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                // Hide Splash screen once fully loaded
-                if (splashScreen.getVisibility() == View.VISIBLE) {
-                    AlphaAnimation fadeOut = new AlphaAnimation(1.0f, 0.0f);
-                    fadeOut.setDuration(400);
-                    fadeOut.setAnimationListener(new android.view.animation.Animation.AnimationListener() {
-                        @Override
-                        public void onAnimationStart(android.view.animation.Animation animation) {}
 
-                        @Override
-                        public void onAnimationEnd(android.view.animation.Animation animation) {
-                            splashScreen.setVisibility(View.GONE);
-                            webView.setVisibility(View.VISIBLE);
-                        }
+                // Inject secure Session Bridge if logged in
+                if (mAuth.getCurrentUser() != null && currentIdToken != null) {
+                    String authValueJson = buildFirebaseStoreValueJson(mAuth.getCurrentUser(), currentIdToken, currentExpirationTime);
+                    String apiKey = "AIzaSyA_06bFtGC54BqB1OoGBU4nAyPABIWsGow";
+                    String authKey = "firebase:authUser:" + apiKey + ":[DEFAULT]";
 
-                        @Override
-                        public void onAnimationRepeat(android.view.animation.Animation animation) {}
-                    });
-                    splashScreen.startAnimation(fadeOut);
+                    String jsInjection = "javascript:(function() {"
+                            + "var authKey = '" + authKey + "';"
+                            + "var authValue = " + authValueJson + ";"
+                            + "try {"
+                                + "localStorage.setItem(authKey, JSON.stringify(authValue));"
+                                + "console.log('Injected auth token to LocalStorage');"
+                            + "} catch(e) { console.error('Error in LocalStorage injection', e); }"
+                            + "try {"
+                                + "var indexedDB = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB || window.msIndexedDB;"
+                                + "if (indexedDB) {"
+                                    + "var request = indexedDB.open('firebaseLocalStorageDb', 1);"
+                                    + "request.onupgradeneeded = function(e) {"
+                                        + "var db = e.target.result;"
+                                        + "if (!db.objectStoreNames.contains('firebaseLocalStorage')) {"
+                                            + "db.createObjectStore('firebaseLocalStorage', { keyPath: 'fbase_key' });"
+                                        + "}"
+                                    + "};"
+                                    + "request.onsuccess = function(e) {"
+                                        + "var db = e.target.result;"
+                                        + "var transaction = db.transaction(['firebaseLocalStorage'], 'readwrite');"
+                                        + "var store = transaction.objectStore('firebaseLocalStorage');"
+                                        + "var record = {"
+                                            + "fbase_key: authKey,"
+                                            + "value: authValue"
+                                        + "};"
+                                        + "var putReq = store.put(record);"
+                                        + "putReq.onsuccess = function() {"
+                                            + "console.log('Injected auth token to IndexedDB');"
+                                        + "};"
+                                    + "};"
+                                + "}"
+                            + "} catch(e) { console.error('Error in IndexedDB injection', e); }"
+                            + "})();";
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                        view.evaluateJavascript(jsInjection, null);
+                    } else {
+                        view.loadUrl(jsInjection);
+                    }
                 }
+
+                // Smoothly dismiss transitions and reveal WebView after write-back completes
+                view.postDelayed(() -> {
+                    runOnUiThread(() -> {
+                        // Change status bar icons to adapt to light web content (dark icons on light bg)
+                        setStatusBarLightIcons(true);
+
+                        if (glassLoadingOverlay.getVisibility() == View.VISIBLE) {
+                            AlphaAnimation fadeOut = new AlphaAnimation(1.0f, 0.0f);
+                            fadeOut.setDuration(400);
+                            fadeOut.setAnimationListener(new android.view.animation.Animation.AnimationListener() {
+                                @Override
+                                public void onAnimationStart(android.view.animation.Animation animation) {}
+                                @Override
+                                public void onAnimationEnd(android.view.animation.Animation animation) {
+                                    glassLoadingOverlay.setVisibility(View.GONE);
+                                    webView.setVisibility(View.VISIBLE);
+                                }
+                                @Override
+                                public void onAnimationRepeat(android.view.animation.Animation animation) {}
+                            });
+                            glassLoadingOverlay.startAnimation(fadeOut);
+                        }
+                        if (splashScreen.getVisibility() == View.VISIBLE) {
+                            AlphaAnimation fadeOut = new AlphaAnimation(1.0f, 0.0f);
+                            fadeOut.setDuration(400);
+                            fadeOut.setAnimationListener(new android.view.animation.Animation.AnimationListener() {
+                                @Override
+                                public void onAnimationStart(android.view.animation.Animation animation) {}
+                                @Override
+                                public void onAnimationEnd(android.view.animation.Animation animation) {
+                                    splashScreen.setVisibility(View.GONE);
+                                    webView.setVisibility(View.VISIBLE);
+                                }
+                                @Override
+                                public void onAnimationRepeat(android.view.animation.Animation animation) {}
+                            });
+                            splashScreen.startAnimation(fadeOut);
+                        }
+                    });
+                }, 1000);
             }
 
             @SuppressWarnings("deprecation")
             @Override
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
-                // Show offline screen on standard errors
                 showOfflineScreen();
             }
 
             @TargetApi(Build.VERSION_CODES.M)
             @Override
             public void onReceivedError(WebView view, android.webkit.WebResourceRequest request, android.webkit.WebResourceError error) {
-                // Check if this error is for the main page
                 if (request.isForMainFrame()) {
                     showOfflineScreen();
                 }
@@ -219,14 +549,14 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
                 if (url.startsWith("http://") || url.startsWith("https://")) {
-                    return false; // Load in WebView
+                    return false;
                 }
                 try {
                     Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
                     view.getContext().startActivity(intent);
                     return true;
                 } catch (Exception e) {
-                    return true; // Handle missing apps gracefully
+                    return true;
                 }
             }
 
@@ -235,21 +565,20 @@ public class MainActivity extends AppCompatActivity {
             public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request) {
                 String url = request.getUrl().toString();
                 if (url.startsWith("http://") || url.startsWith("https://")) {
-                    return false; // Load in WebView
+                    return false;
                 }
                 try {
                     Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
                     view.getContext().startActivity(intent);
                     return true;
                 } catch (Exception e) {
-                    return true; // Handle missing apps gracefully
+                    return true;
                 }
             }
         });
 
         // Custom WebChromeClient to handle camera permissions, file uploads, and window popups
         webView.setWebChromeClient(new WebChromeClient() {
-            // Support camera / microphone permissions dynamically in WebView
             @Override
             public void onPermissionRequest(final PermissionRequest request) {
                 MainActivity.this.runOnUiThread(() -> {
@@ -259,7 +588,6 @@ public class MainActivity extends AppCompatActivity {
                 });
             }
 
-            // Support popup windows (e.g. Firebase/Google sign-in popup flow) by routing to the same WebView
             @Override
             public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, android.os.Message resultMsg) {
                 WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
@@ -268,7 +596,6 @@ public class MainActivity extends AppCompatActivity {
                 return true;
             }
 
-            // File Chooser for <input type="file" />
             @Override
             public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
                 if (MainActivity.this.filePathCallback != null) {
@@ -318,6 +645,42 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private String buildFirebaseStoreValueJson(FirebaseUser user, String idToken, long expirationTime) {
+        String uid = user.getUid() != null ? user.getUid() : "";
+        String email = user.getEmail() != null ? user.getEmail() : "";
+        boolean emailVerified = user.isEmailVerified();
+        String displayName = user.getDisplayName() != null ? user.getDisplayName() : "";
+        String photoUrl = user.getPhotoUrl() != null ? user.getPhotoUrl().toString() : "";
+        String apiKey = "AIzaSyA_06bFtGC54BqB1OoGBU4nAyPABIWsGow";
+
+        return "{"
+                + "\"uid\":\"" + escapeJsString(uid) + "\","
+                + "\"email\":\"" + escapeJsString(email) + "\","
+                + "\"emailVerified\":" + emailVerified + ","
+                + "\"displayName\":\"" + escapeJsString(displayName) + "\","
+                + "\"photoURL\":\"" + escapeJsString(photoUrl) + "\","
+                + "\"isAnonymous\":false,"
+                + "\"tenantId\":null,"
+                + "\"providerData\":[],"
+                + "\"stsTokenManager\":{"
+                + "\"apiKey\":\"" + apiKey + "\","
+                + "\"refreshToken\":\"" + escapeJsString(idToken) + "\","
+                + "\"accessToken\":\"" + escapeJsString(idToken) + "\","
+                + "\"expirationTime\":" + expirationTime
+                + "},"
+                + "\"apiKey\":\"" + apiKey + "\","
+                + "\"appName\":\"[DEFAULT]\""
+                + "}";
+    }
+
+    private String escapeJsString(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+    }
+
     private File createImageFile() throws IOException {
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
         String imageFileName = "JPEG_" + timeStamp + "_";
@@ -341,10 +704,8 @@ public class MainActivity extends AppCompatActivity {
 
             Uri[] results = null;
 
-            // Check if response is positive and contains values
             if (resultCode == RESULT_OK) {
                 if (data == null || data.getData() == null) {
-                    // Capture path contains image from camera
                     if (cameraPhotoPath != null) {
                         results = new Uri[]{Uri.parse(cameraPhotoPath)};
                     }
@@ -358,9 +719,41 @@ public class MainActivity extends AppCompatActivity {
 
             filePathCallback.onReceiveValue(results);
             filePathCallback = null;
+        } else if (requestCode == GOOGLE_SIGN_IN_REQUEST_CODE) {
+            Task<GoogleSignInAccount> task = GoogleSignIn.getSignedInAccountFromIntent(data);
+            try {
+                GoogleSignInAccount account = task.getResult(ApiException.class);
+                if (account != null) {
+                    firebaseAuthWithGoogle(account);
+                } else {
+                    runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
+                    Toast.makeText(this, "Google Sign-In returned null account.", Toast.LENGTH_SHORT).show();
+                }
+            } catch (ApiException e) {
+                runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
+                Toast.makeText(this, "Google Sign-In failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            }
         } else {
             super.onActivityResult(requestCode, resultCode, data);
         }
+    }
+
+    private void firebaseAuthWithGoogle(GoogleSignInAccount acct) {
+        AuthCredential credential = GoogleAuthProvider.getCredential(acct.getIdToken(), null);
+        mAuth.signInWithCredential(credential)
+                .addOnCompleteListener(this, task -> {
+                    if (task.isSuccessful()) {
+                        FirebaseUser user = mAuth.getCurrentUser();
+                        if (user != null) {
+                            fetchTokenAndLoadWeb(user);
+                        }
+                    } else {
+                        runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
+                        Toast.makeText(MainActivity.this, "Firebase login with Google failed: " +
+                                (task.getException() != null ? task.getException().getMessage() : "Unknown"),
+                                Toast.LENGTH_LONG).show();
+                    }
+                });
     }
 
     private void setupBackButton() {
@@ -370,7 +763,6 @@ public class MainActivity extends AppCompatActivity {
                 if (webView.canGoBack()) {
                     webView.goBack();
                 } else {
-                    // Exit the app gracefully
                     finish();
                 }
             }
@@ -435,12 +827,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    @Override
-    protected void onDestroy() {
-        unregisterNetworkCallback();
-        super.onDestroy();
-    }
-
     private boolean isNetworkConnected() {
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         if (cm != null) {
@@ -464,13 +850,14 @@ public class MainActivity extends AppCompatActivity {
     private void showOfflineScreen() {
         webView.setVisibility(View.GONE);
         splashScreen.setVisibility(View.GONE);
+        loginScreenContainer.setVisibility(View.GONE);
+        glassLoadingOverlay.setVisibility(View.GONE);
         offlineScreen.setVisibility(View.VISIBLE);
     }
 
     private void hideOfflineScreen() {
         offlineScreen.setVisibility(View.GONE);
-        // Do not immediately make webview visible if splash screen is running
-        if (splashScreen.getVisibility() != View.VISIBLE) {
+        if (splashScreen.getVisibility() != View.VISIBLE && loginScreenContainer.getVisibility() != View.VISIBLE && glassLoadingOverlay.getVisibility() != View.VISIBLE) {
             webView.setVisibility(View.VISIBLE);
         }
     }
@@ -493,7 +880,6 @@ public class MainActivity extends AppCompatActivity {
         if (requestCode == PERMISSION_REQUEST_CODE) {
             for (int i = 0; i < permissions.length; i++) {
                 if (grantResults[i] == PackageManager.PERMISSION_DENIED) {
-                    // Standard notification or warning, but allow application to function
                     Toast.makeText(this, "Permission " + permissions[i] + " denied. Some features might not work properly.", Toast.LENGTH_SHORT).show();
                 }
             }
