@@ -436,6 +436,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onPause() {
+        super.onPause();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            android.webkit.CookieManager.getInstance().flush();
+        }
+    }
+
+    @Override
     protected void onDestroy() {
         unregisterNetworkCallback();
         super.onDestroy();
