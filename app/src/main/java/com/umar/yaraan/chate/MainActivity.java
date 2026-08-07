@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
@@ -107,6 +108,9 @@ public class MainActivity extends AppCompatActivity {
         // 5. Request necessary runtime permissions
         checkAndRequestPermissions();
 
+        // Register dynamic network callback for auto-reconnect
+        registerNetworkCallback();
+
         // 6. Start loading
         attemptLoadUrl();
     }
@@ -144,11 +148,30 @@ public class MainActivity extends AppCompatActivity {
         settings.setBuiltInZoomControls(true);
         settings.setDisplayZoomControls(false);
 
+        // Support opening popups / multiple windows (required for Google/Firebase OAuth popup flow)
+        settings.setSupportMultipleWindows(true);
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
+
         // Media/audio settings
         settings.setMediaPlaybackRequiresUserGesture(false);
 
         // Enable hardware acceleration
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+
+        // Enable and accept third-party cookies for seamless OAuth redirects across domains
+        android.webkit.CookieManager cookieManager = android.webkit.CookieManager.getInstance();
+        cookieManager.setAcceptCookie(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            cookieManager.setAcceptThirdPartyCookies(webView, true);
+        }
+
+        // Dynamically clean User Agent to bypass Google's disallowed_useragent checks in WebViews
+        String originalUserAgent = settings.getUserAgentString();
+        if (originalUserAgent != null) {
+            String cleanUserAgent = originalUserAgent.replace("; wv", "");
+            cleanUserAgent = cleanUserAgent.replaceAll("Version/\\d+\\.\\d+\\s?", "");
+            settings.setUserAgentString(cleanUserAgent);
+        }
 
         // Custom WebViewClient
         webView.setWebViewClient(new WebViewClient() {
@@ -191,9 +214,40 @@ public class MainActivity extends AppCompatActivity {
                     showOfflineScreen();
                 }
             }
+
+            @SuppressWarnings("deprecation")
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                if (url.startsWith("http://") || url.startsWith("https://")) {
+                    return false; // Load in WebView
+                }
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                    view.getContext().startActivity(intent);
+                    return true;
+                } catch (Exception e) {
+                    return true; // Handle missing apps gracefully
+                }
+            }
+
+            @TargetApi(Build.VERSION_CODES.N)
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request) {
+                String url = request.getUrl().toString();
+                if (url.startsWith("http://") || url.startsWith("https://")) {
+                    return false; // Load in WebView
+                }
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                    view.getContext().startActivity(intent);
+                    return true;
+                } catch (Exception e) {
+                    return true; // Handle missing apps gracefully
+                }
+            }
         });
 
-        // Custom WebChromeClient to handle camera permissions and file uploads
+        // Custom WebChromeClient to handle camera permissions, file uploads, and window popups
         webView.setWebChromeClient(new WebChromeClient() {
             // Support camera / microphone permissions dynamically in WebView
             @Override
@@ -203,6 +257,15 @@ public class MainActivity extends AppCompatActivity {
                         request.grant(request.getResources());
                     }
                 });
+            }
+
+            // Support popup windows (e.g. Firebase/Google sign-in popup flow) by routing to the same WebView
+            @Override
+            public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, android.os.Message resultMsg) {
+                WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+                transport.setWebView(view);
+                resultMsg.sendToTarget();
+                return true;
             }
 
             // File Chooser for <input type="file" />
@@ -319,12 +382,63 @@ public class MainActivity extends AppCompatActivity {
             hideOfflineScreen();
             if (webView.getUrl() == null) {
                 webView.loadUrl(TARGET_URL);
-            } else {
+            } else if (offlineScreen.getVisibility() == View.VISIBLE) {
                 webView.reload();
             }
         } else {
             showOfflineScreen();
         }
+    }
+
+    private ConnectivityManager.NetworkCallback networkCallback;
+
+    private void registerNetworkCallback() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm != null) {
+                networkCallback = new ConnectivityManager.NetworkCallback() {
+                    @Override
+                    public void onAvailable(@NonNull Network network) {
+                        runOnUiThread(() -> {
+                            attemptLoadUrl();
+                        });
+                    }
+
+                    @Override
+                    public void onLost(@NonNull Network network) {
+                        runOnUiThread(() -> {
+                            if (!isNetworkConnected()) {
+                                showOfflineScreen();
+                            }
+                        });
+                    }
+                };
+                try {
+                    cm.registerDefaultNetworkCallback(networkCallback);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    private void unregisterNetworkCallback() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && networkCallback != null) {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm != null) {
+                try {
+                    cm.unregisterNetworkCallback(networkCallback);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        unregisterNetworkCallback();
+        super.onDestroy();
     }
 
     private boolean isNetworkConnected() {
