@@ -145,7 +145,7 @@
                     android:layout_height="2dp"
                     android:background="#80FFFFFF"
                     android:layout_marginTop="12dp"
-                    android:layout_marginBottom="40dp" />
+                    android:layout_marginBottom="120dp" />
 
                 <!-- Google Sign-In Button (Beautifully styled) -->
                 <LinearLayout

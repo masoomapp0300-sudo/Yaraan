@@ -287,7 +287,8 @@ public class MainActivity extends AppCompatActivity {
                     if (videoView != null && videoView.isPlaying()) {
                         videoView.stopPlayback();
                     }
-                    attemptLoadUrl();
+                    // Force load TARGET_URL to ensure we load the home page with the new session!
+                    webView.loadUrl(TARGET_URL);
                 });
             } else {
                 runOnUiThread(() -> {
@@ -540,12 +541,22 @@ public class MainActivity extends AppCompatActivity {
                                     + "};"
                                 + "}"
                             + "} catch(e) { console.error('Error in IndexedDB injection', e); }"
+                            + "if (window.location.pathname.indexOf('/login') !== -1 || window.location.pathname.indexOf('/signin') !== -1 || window.location.href.indexOf('login') !== -1 || window.location.href.indexOf('signin') !== -1) {"
+                                + "window.location.href = '" + TARGET_URL + "';"
+                            + "}"
                             + "})();";
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                         view.evaluateJavascript(jsInjection, null);
                     } else {
                         view.loadUrl(jsInjection);
+                    }
+
+                    // Android side redirect as well to guarantee bypass
+                    if (url.contains("/login") || url.contains("/signin") || url.contains("login") || url.contains("signin")) {
+                        view.postDelayed(() -> {
+                            view.loadUrl(TARGET_URL);
+                        }, 250);
                     }
                 }
 
@@ -791,7 +802,9 @@ public class MainActivity extends AppCompatActivity {
                 }
             } catch (ApiException e) {
                 runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
-                Toast.makeText(this, "Google Sign-In failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                int statusCode = e.getStatusCode();
+                String errorMsg = "Google Sign-In failed (Code " + statusCode + "): " + e.getMessage();
+                Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show();
             }
         } else {
             super.onActivityResult(requestCode, resultCode, data);
