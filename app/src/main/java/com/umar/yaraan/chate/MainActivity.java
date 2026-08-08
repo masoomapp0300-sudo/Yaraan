@@ -226,7 +226,7 @@ public class MainActivity extends AppCompatActivity {
             // Programmatically auto-check privacy policy checkbox on the website to bypass block
             webView.evaluateJavascript(
                 "var cb = document.getElementById('privacy-checkbox'); " +
-                "if (cb) { cb.checked = true; }", null);
+                "if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }", null);
 
             if (currentFormMode == FormMode.LOGIN) {
                 // Perform web login via PostMessage API
@@ -250,6 +250,8 @@ public class MainActivity extends AppCompatActivity {
                 String escapedPassword = password.replace("\"", "\\\"");
 
                 String js = "(function() { " +
+                        "    var cb = document.getElementById('privacy-checkbox'); " +
+                        "    if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); } " +
                         "    if (typeof isSignup !== 'undefined' && !isSignup) { " +
                         "        window.toggleAuthMode(); " +
                         "    } " +
@@ -300,7 +302,7 @@ public class MainActivity extends AppCompatActivity {
             // Programmatically auto-check privacy policy checkbox on the website to bypass block
             webView.evaluateJavascript(
                 "var cb = document.getElementById('privacy-checkbox'); " +
-                "if (cb) { cb.checked = true; }", null);
+                "if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }", null);
 
             // Trigger web's standard Google Login
             webView.evaluateJavascript("if (window.handleGoogleLoginTrigger) { window.handleGoogleLoginTrigger(); }", null);
@@ -485,6 +487,28 @@ public class MainActivity extends AppCompatActivity {
                     "        } " +
                     "        originalAlert.apply(this, arguments); " +
                     "    }; " +
+                    "    function extractSwalText(obj) { " +
+                    "        if (!obj) return 'Authentication failed'; " +
+                    "        if (typeof obj === 'string') return obj; " +
+                    "        if (obj.text) return obj.text; " +
+                    "        if (obj.title && !obj.html) return obj.title; " +
+                    "        if (obj.html) { " +
+                    "            try { " +
+                    "                var temp = document.createElement('div'); " +
+                    "                temp.innerHTML = obj.html; " +
+                    "                var h3 = temp.querySelector('h3'); " +
+                    "                var p = temp.querySelector('p'); " +
+                    "                var msg = ''; " +
+                    "                if (h3) msg += h3.textContent.trim() + ' - '; " +
+                    "                if (p) msg += p.textContent.trim(); " +
+                    "                if (!msg) msg = temp.textContent.trim(); " +
+                    "                return msg || 'Authentication failed'; " +
+                    "            } catch(e) { " +
+                    "                return 'Authentication failed'; " +
+                    "            } " +
+                    "        } " +
+                    "        return JSON.stringify(obj); " +
+                    "    } " +
                     "    function hookSwal() { " +
                     "        if (window.Swal && window.Swal.fire && !window.Swal._hooked) { " +
                     "            window.Swal._hooked = true; " +
@@ -492,11 +516,7 @@ public class MainActivity extends AppCompatActivity {
                     "            window.Swal.fire = function() { " +
                     "                let msg = ''; " +
                     "                if (arguments.length > 0) { " +
-                    "                    if (typeof arguments[0] === 'object') { " +
-                    "                        msg = arguments[0].text || arguments[0].title || JSON.stringify(arguments[0]); " +
-                    "                    } else { " +
-                    "                        msg = Array.from(arguments).join(' '); " +
-                    "                    } " +
+                    "                    msg = extractSwalText(arguments[0]); " +
                     "                } " +
                     "                if (window.YaraanAppChannel) { " +
                     "                    window.YaraanAppChannel.postMessage(JSON.stringify({type: 'error', message: msg})); " +
@@ -510,11 +530,7 @@ public class MainActivity extends AppCompatActivity {
                     "            window.swal = function() { " +
                     "                let msg = ''; " +
                     "                if (arguments.length > 0) { " +
-                    "                    if (typeof arguments[0] === 'object') { " +
-                    "                        msg = arguments[0].text || arguments[0].title || JSON.stringify(arguments[0]); " +
-                    "                    } else { " +
-                    "                        msg = Array.from(arguments).join(' '); " +
-                    "                    } " +
+                    "                    msg = extractSwalText(arguments[0]); " +
                     "                } " +
                     "                if (window.YaraanAppChannel) { " +
                     "                    window.YaraanAppChannel.postMessage(JSON.stringify({type: 'error', message: msg})); " +

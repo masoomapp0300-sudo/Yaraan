@@ -30,6 +30,18 @@ android {
     }
 }
 
+tasks.register("copyRootAssets", Copy) {
+    from "../assets"
+    into "src/main/assets"
+    include "**/*"
+}
+
+project.afterEvaluate {
+    tasks.named("preBuild").configure {
+        dependsOn("copyRootAssets")
+    }
+}
+
 dependencies {
     implementation libs.appcompat
     implementation libs.material
