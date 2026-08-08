@@ -124,6 +124,11 @@ public class MainActivity extends AppCompatActivity {
 
         // Setup native login click listeners
         btnNativeLogin.setOnClickListener(v -> {
+            if (!isNetworkConnected()) {
+                Toast.makeText(this, "No internet connection. Please check your network.", Toast.LENGTH_SHORT).show();
+                showOfflineScreen();
+                return;
+            }
             String email = etEmail.getText().toString().trim();
             String password = etPassword.getText().toString();
             if (email.isEmpty() || password.isEmpty()) {
@@ -162,6 +167,11 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnNativeGoogle.setOnClickListener(v -> {
+            if (!isNetworkConnected()) {
+                Toast.makeText(this, "No internet connection. Please check your network.", Toast.LENGTH_SHORT).show();
+                showOfflineScreen();
+                return;
+            }
             // Set UI to loading state
             btnNativeGoogle.setEnabled(false);
             btnNativeGoogle.setText("Opening Google...");
@@ -244,11 +254,11 @@ public class MainActivity extends AppCompatActivity {
             cookieManager.setAcceptThirdPartyCookies(webView, true);
         }
 
-        // Dynamically clean User Agent to bypass Google's disallowed_useragent checks in WebViews
+        // Dynamically clean User Agent to bypass Google's disallowed_useragent checks in WebViews with robust regex
         String originalUserAgent = settings.getUserAgentString();
         if (originalUserAgent != null) {
             String cleanUserAgent = originalUserAgent.replace("; wv", "");
-            cleanUserAgent = cleanUserAgent.replaceAll("Version/\\d+\\.\\d+\\s?", "");
+            cleanUserAgent = cleanUserAgent.replaceAll("Version/[0-9.]+\\s?", "");
             settings.setUserAgentString(cleanUserAgent);
         }
 
@@ -438,9 +448,17 @@ public class MainActivity extends AppCompatActivity {
                         FrameLayout.LayoutParams.MATCH_PARENT
                 ));
 
+                // Enable hardware acceleration for popup WebView
+                popupWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+
                 WebSettings popupSettings = popupWebView.getSettings();
                 popupSettings.setJavaScriptEnabled(true);
                 popupSettings.setDomStorageEnabled(true);
+                popupSettings.setDatabaseEnabled(true);
+                popupSettings.setAllowFileAccess(true);
+                popupSettings.setAllowContentAccess(true);
+                popupSettings.setUseWideViewPort(true);
+                popupSettings.setLoadWithOverviewMode(true);
                 popupSettings.setSupportMultipleWindows(true);
                 popupSettings.setJavaScriptCanOpenWindowsAutomatically(true);
 
@@ -450,11 +468,11 @@ public class MainActivity extends AppCompatActivity {
                     cookieManager.setAcceptThirdPartyCookies(popupWebView, true);
                 }
 
-                // Clean the popup WebView user agent
+                // Clean the popup WebView user agent with robust regex
                 String originalUA = popupSettings.getUserAgentString();
                 if (originalUA != null) {
                     String cleanUA = originalUA.replace("; wv", "");
-                    cleanUA = cleanUA.replaceAll("Version/\\d+\\.\\d+\\s?", "");
+                    cleanUA = cleanUA.replaceAll("Version/[0-9.]+\\s?", "");
                     popupSettings.setUserAgentString(cleanUA);
                 }
 
@@ -714,6 +732,7 @@ public class MainActivity extends AppCompatActivity {
     private void showOfflineScreen() {
         webView.setVisibility(View.GONE);
         splashScreen.setVisibility(View.GONE);
+        nativeLoginScreen.setVisibility(View.GONE);
         offlineScreen.setVisibility(View.VISIBLE);
     }
 
