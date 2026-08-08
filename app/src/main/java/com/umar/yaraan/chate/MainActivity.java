@@ -13,6 +13,10 @@ import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.content.SharedPreferences;
+import org.json.JSONObject;
+import android.webkit.JavascriptInterface;
+import android.widget.EditText;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.view.View;
@@ -56,9 +60,15 @@ public class MainActivity extends AppCompatActivity {
 
     private FrameLayout webViewContainer;
     private WebView webView;
+    private WebView popupWebView;
     private RelativeLayout splashScreen;
     private LinearLayout offlineScreen;
     private Button btnRetry;
+
+    // Native Login UI fields
+    private RelativeLayout nativeLoginScreen;
+    private EditText etEmail, etPassword;
+    private Button btnNativeLogin, btnNativeGoogle;
 
     // File upload variables
     private ValueCallback<Uri[]> filePathCallback;
@@ -96,6 +106,13 @@ public class MainActivity extends AppCompatActivity {
         offlineScreen = findViewById(R.id.offline_screen);
         btnRetry = findViewById(R.id.btn_retry);
 
+        // Initialize Native Login Views
+        nativeLoginScreen = findViewById(R.id.native_login_screen);
+        etEmail = findViewById(R.id.et_email);
+        etPassword = findViewById(R.id.et_password);
+        btnNativeLogin = findViewById(R.id.btn_native_login);
+        btnNativeGoogle = findViewById(R.id.btn_native_google);
+
         // 2. Setup WebView and Settings
         setupWebView();
 
@@ -104,6 +121,68 @@ public class MainActivity extends AppCompatActivity {
 
         // 4. Retry connection click handler
         btnRetry.setOnClickListener(v -> attemptLoadUrl());
+
+        // Setup native login click listeners
+        btnNativeLogin.setOnClickListener(v -> {
+            String email = etEmail.getText().toString().trim();
+            String password = etPassword.getText().toString();
+            if (email.isEmpty() || password.isEmpty()) {
+                Toast.makeText(this, "Please enter email and password", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Set UI to loading state
+            btnNativeLogin.setEnabled(false);
+            btnNativeLogin.setText("Signing in...");
+            btnNativeGoogle.setEnabled(false);
+
+            // Set 10-second safety timeout to reset buttons if request hangs
+            timeoutHandler.removeCallbacks(timeoutRunnable);
+            timeoutHandler.postDelayed(timeoutRunnable, 10000);
+
+            // Programmatically auto-check privacy policy checkbox on the website to bypass block
+            webView.evaluateJavascript(
+                "var cb = document.getElementById('privacy-checkbox'); " +
+                "if (cb) { cb.checked = true; }", null);
+
+            // Safely construct JSON payload to prevent escaping/special-character bugs
+            try {
+                JSONObject jsonPayload = new JSONObject();
+                jsonPayload.put("type", "emailLogin");
+                jsonPayload.put("email", email);
+                jsonPayload.put("password", password);
+
+                String js = "window.postMessage(" + jsonPayload.toString() + ", '*');";
+                webView.evaluateJavascript(js, null);
+            } catch (Exception e) {
+                e.printStackTrace();
+                Toast.makeText(this, "Login initialization failed", Toast.LENGTH_SHORT).show();
+                resetLoginButtons();
+            }
+        });
+
+        btnNativeGoogle.setOnClickListener(v -> {
+            // Set UI to loading state
+            btnNativeGoogle.setEnabled(false);
+            btnNativeGoogle.setText("Opening Google...");
+            btnNativeLogin.setEnabled(false);
+
+            // Set 10-second safety timeout
+            timeoutHandler.removeCallbacks(timeoutRunnable);
+            timeoutHandler.postDelayed(timeoutRunnable, 10000);
+
+            // Show webview so the user can complete Google Sign-In
+            webView.setVisibility(View.VISIBLE);
+            nativeLoginScreen.setVisibility(View.GONE);
+
+            // Programmatically auto-check privacy policy checkbox on the website to bypass block
+            webView.evaluateJavascript(
+                "var cb = document.getElementById('privacy-checkbox'); " +
+                "if (cb) { cb.checked = true; }", null);
+
+            // Trigger web's standard Google Login
+            webView.evaluateJavascript("window.handleGoogleLoginTrigger();", null);
+        });
 
         // 5. Request necessary runtime permissions
         checkAndRequestPermissions();
@@ -174,10 +253,86 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // Custom WebViewClient
+        webView.addJavascriptInterface(new WebAppInterface(), "YaraanAppChannel");
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+
+                // Inject CSS to completely hide the website's login screen (#view-auth)
+                webView.evaluateJavascript(
+                    "var style = document.createElement('style'); " +
+                    "style.innerHTML = '#view-auth { display: none !important; }'; " +
+                    "document.head.appendChild(style);", null);
+
+                // Inject dynamic auth state listener to notify Android on successful login
+                webView.evaluateJavascript(
+                    "if (window.auth) { " +
+                    "    window.auth.onAuthStateChanged(function(user) { " +
+                    "        if (user) { " +
+                    "            YaraanAppChannel.postMessage(JSON.stringify({type: 'login_success', uid: user.uid})); " +
+                    "        } " +
+                    "    }); " +
+                    "}", null);
+
+                // Inject alerts/Swal/unhandledrejection overrides to propagate authentication or general errors back to native
+                webView.evaluateJavascript(
+                    "(function() { " +
+                    "    const originalAlert = window.alert; " +
+                    "    window.alert = function(msg) { " +
+                    "        if (window.YaraanAppChannel) { " +
+                    "            window.YaraanAppChannel.postMessage(JSON.stringify({type: 'error', message: String(msg)})); " +
+                    "        } " +
+                    "        originalAlert.apply(this, arguments); " +
+                    "    }; " +
+                    "    function hookSwal() { " +
+                    "        if (window.Swal && window.Swal.fire && !window.Swal._hooked) { " +
+                    "            window.Swal._hooked = true; " +
+                    "            const originalSwalFire = window.Swal.fire; " +
+                    "            window.Swal.fire = function() { " +
+                    "                let msg = ''; " +
+                    "                if (arguments.length > 0) { " +
+                    "                    if (typeof arguments[0] === 'object') { " +
+                    "                        msg = arguments[0].text || arguments[0].title || JSON.stringify(arguments[0]); " +
+                    "                    } else { " +
+                    "                        msg = Array.from(arguments).join(' '); " +
+                    "                    } " +
+                    "                } " +
+                    "                if (window.YaraanAppChannel) { " +
+                    "                    window.YaraanAppChannel.postMessage(JSON.stringify({type: 'error', message: msg})); " +
+                    "                } " +
+                    "                return originalSwalFire.apply(this, arguments); " +
+                    "            }; " +
+                    "        } " +
+                    "        if (window.swal && !window.swal._hooked) { " +
+                    "            window.swal._hooked = true; " +
+                    "            const originalSwal = window.swal; " +
+                    "            window.swal = function() { " +
+                    "                let msg = ''; " +
+                    "                if (arguments.length > 0) { " +
+                    "                    if (typeof arguments[0] === 'object') { " +
+                    "                        msg = arguments[0].text || arguments[0].title || JSON.stringify(arguments[0]); " +
+                    "                    } else { " +
+                    "                        msg = Array.from(arguments).join(' '); " +
+                    "                    } " +
+                    "                } " +
+                    "                if (window.YaraanAppChannel) { " +
+                    "                    window.YaraanAppChannel.postMessage(JSON.stringify({type: 'error', message: msg})); " +
+                    "                } " +
+                    "                return originalSwal.apply(this, arguments); " +
+                    "            }; " +
+                    "        } " +
+                    "    } " +
+                    "    hookSwal(); " +
+                    "    setInterval(hookSwal, 1000); " +
+                    "    window.addEventListener('unhandledrejection', function(event) { " +
+                    "        let msg = event.reason ? (event.reason.message || event.reason) : 'Unknown Error'; " +
+                    "        if (window.YaraanAppChannel) { " +
+                    "            window.YaraanAppChannel.postMessage(JSON.stringify({type: 'error', message: String(msg)})); " +
+                    "        } " +
+                    "    }); " +
+                    "})();", null);
+
                 // Hide Splash screen once fully loaded
                 if (splashScreen.getVisibility() == View.VISIBLE) {
                     AlphaAnimation fadeOut = new AlphaAnimation(1.0f, 0.0f);
@@ -189,7 +344,14 @@ public class MainActivity extends AppCompatActivity {
                         @Override
                         public void onAnimationEnd(android.view.animation.Animation animation) {
                             splashScreen.setVisibility(View.GONE);
-                            webView.setVisibility(View.VISIBLE);
+                            // Only show WebView if user is logged in
+                            SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
+                            boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
+                            if (isLoggedIn) {
+                                webView.setVisibility(View.VISIBLE);
+                            } else {
+                                showNativeLoginScreen();
+                            }
                         }
 
                         @Override
@@ -259,11 +421,78 @@ public class MainActivity extends AppCompatActivity {
                 });
             }
 
-            // Support popup windows (e.g. Firebase/Google sign-in popup flow) by routing to the same WebView
+            // Support popup windows (e.g. Firebase/Google sign-in popup flow) by creating a dynamic popup WebView
+            @SuppressLint("SetJavaScriptEnabled")
             @Override
             public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, android.os.Message resultMsg) {
+                // If there's an existing popup webview, clean it up first
+                if (popupWebView != null) {
+                    webViewContainer.removeView(popupWebView);
+                    popupWebView.destroy();
+                    popupWebView = null;
+                }
+
+                popupWebView = new WebView(MainActivity.this);
+                popupWebView.setLayoutParams(new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                ));
+
+                WebSettings popupSettings = popupWebView.getSettings();
+                popupSettings.setJavaScriptEnabled(true);
+                popupSettings.setDomStorageEnabled(true);
+                popupSettings.setSupportMultipleWindows(true);
+                popupSettings.setJavaScriptCanOpenWindowsAutomatically(true);
+
+                // Ensure third-party cookies are accepted for OAuth popup
+                android.webkit.CookieManager cookieManager = android.webkit.CookieManager.getInstance();
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    cookieManager.setAcceptThirdPartyCookies(popupWebView, true);
+                }
+
+                // Clean the popup WebView user agent
+                String originalUA = popupSettings.getUserAgentString();
+                if (originalUA != null) {
+                    String cleanUA = originalUA.replace("; wv", "");
+                    cleanUA = cleanUA.replaceAll("Version/\\d+\\.\\d+\\s?", "");
+                    popupSettings.setUserAgentString(cleanUA);
+                }
+
+                popupWebView.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                        return false; // let the popup WebView load it
+                    }
+
+                    @TargetApi(Build.VERSION_CODES.N)
+                    @Override
+                    public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request) {
+                        return false;
+                    }
+                });
+
+                popupWebView.setWebChromeClient(new WebChromeClient() {
+                    @Override
+                    public void onCloseWindow(WebView window) {
+                        super.onCloseWindow(window);
+                        if (popupWebView != null) {
+                            webViewContainer.removeView(popupWebView);
+                            popupWebView.destroy();
+                            popupWebView = null;
+                        }
+                        // Check if still not logged in, if so recover Native Login UI layout rather than blank screen
+                        SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
+                        boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
+                        if (!isLoggedIn) {
+                            showNativeLoginScreen();
+                            resetLoginButtons();
+                        }
+                    }
+                });
+
+                webViewContainer.addView(popupWebView);
                 WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
-                transport.setWebView(view);
+                transport.setWebView(popupWebView);
                 resultMsg.sendToTarget();
                 return true;
             }
@@ -367,7 +596,20 @@ public class MainActivity extends AppCompatActivity {
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
-                if (webView.canGoBack()) {
+                if (popupWebView != null) {
+                    webViewContainer.removeView(popupWebView);
+                    popupWebView.destroy();
+                    popupWebView = null;
+                    // Recover native login UI layout if they cancel out of popup
+                    SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
+                    boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
+                    if (!isLoggedIn) {
+                        showNativeLoginScreen();
+                        resetLoginButtons();
+                    }
+                } else if (nativeLoginScreen.getVisibility() == View.VISIBLE) {
+                    finish();
+                } else if (webView.canGoBack()) {
                     webView.goBack();
                 } else {
                     // Exit the app gracefully
@@ -479,8 +721,76 @@ public class MainActivity extends AppCompatActivity {
         offlineScreen.setVisibility(View.GONE);
         // Do not immediately make webview visible if splash screen is running
         if (splashScreen.getVisibility() != View.VISIBLE) {
-            webView.setVisibility(View.VISIBLE);
+            SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
+            boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
+            if (isLoggedIn) {
+                webView.setVisibility(View.VISIBLE);
+            } else {
+                showNativeLoginScreen();
+            }
         }
+    }
+
+    public class WebAppInterface {
+        @JavascriptInterface
+        public void postMessage(String message) {
+            runOnUiThread(() -> {
+                handleWebMessage(message);
+            });
+        }
+    }
+
+    private void handleWebMessage(String message) {
+        if (message == null) return;
+        try {
+            if (message.equals("user_logged_out")) {
+                SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
+                prefs.edit().putBoolean("is_logged_in", false).apply();
+                showNativeLoginScreen();
+            } else if (message.startsWith("{")) {
+                JSONObject json = new JSONObject(message);
+                String type = json.optString("type");
+                if (type.equals("login_success")) {
+                    SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
+                    prefs.edit().putBoolean("is_logged_in", true).apply();
+                    hideNativeLoginScreen();
+                    resetLoginButtons();
+                } else if (type.equals("error")) {
+                    String errorMsg = json.optString("message", "Authentication failed");
+                    Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show();
+                    resetLoginButtons();
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void showNativeLoginScreen() {
+        runOnUiThread(() -> {
+            webView.setVisibility(View.GONE);
+            nativeLoginScreen.setVisibility(View.VISIBLE);
+        });
+    }
+
+    private void hideNativeLoginScreen() {
+        runOnUiThread(() -> {
+            nativeLoginScreen.setVisibility(View.GONE);
+            webView.setVisibility(View.VISIBLE);
+        });
+    }
+
+    private final android.os.Handler timeoutHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable timeoutRunnable = this::resetLoginButtons;
+
+    private void resetLoginButtons() {
+        runOnUiThread(() -> {
+            timeoutHandler.removeCallbacks(timeoutRunnable);
+            btnNativeLogin.setEnabled(true);
+            btnNativeLogin.setText("Sign In");
+            btnNativeGoogle.setEnabled(true);
+            btnNativeGoogle.setText("Sign in with Google");
+        });
     }
 
     private void checkAndRequestPermissions() {
