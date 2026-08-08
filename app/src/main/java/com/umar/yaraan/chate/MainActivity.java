@@ -30,11 +30,13 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
+import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.VideoView;
 
 import androidx.activity.OnBackPressedCallback;
+import com.google.firebase.auth.UserProfileChangeRequest;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
@@ -87,7 +89,17 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout btnGoogleSignin;
     private RelativeLayout glassLoadingOverlay;
 
-    private boolean isSignUpMode = false;
+    private ImageButton btnEmailToggle;
+    private LinearLayout credentialsCard;
+    private EditText etName;
+    private TextView tvFormTitle;
+
+    private enum FormMode {
+        LOGIN,
+        SIGN_UP,
+        FORGOT_PASSWORD
+    }
+    private FormMode currentFormMode = FormMode.LOGIN;
 
     // Firebase & Auth Client variables
     private FirebaseAuth mAuth;
@@ -156,6 +168,11 @@ public class MainActivity extends AppCompatActivity {
         tvToggleInfo = findViewById(R.id.tv_toggle_info);
         btnGoogleSignin = findViewById(R.id.btn_google_signin);
         glassLoadingOverlay = findViewById(R.id.glass_loading_overlay);
+
+        btnEmailToggle = findViewById(R.id.btn_email_toggle);
+        credentialsCard = findViewById(R.id.credentials_card);
+        etName = findViewById(R.id.et_name);
+        tvFormTitle = findViewById(R.id.tv_form_title);
 
         // Apply Realtime Glassmorphic Blur to Loading card on Android 12+ (API 31+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -285,28 +302,89 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private void setFormMode(FormMode mode) {
+        currentFormMode = mode;
+        if (mode == FormMode.LOGIN) {
+            tvFormTitle.setText("LOG IN");
+            etName.setVisibility(View.GONE);
+            etEmail.setVisibility(View.VISIBLE);
+            etPassword.setVisibility(View.VISIBLE);
+            btnForgotPassword.setVisibility(View.VISIBLE);
+            btnNativeLogin.setText("Log In");
+            tvToggleInfo.setText("Don't have an account? ");
+            btnToggleSignup.setText("Create Account");
+        } else if (mode == FormMode.SIGN_UP) {
+            tvFormTitle.setText("CREATE ACCOUNT");
+            etName.setVisibility(View.VISIBLE);
+            etEmail.setVisibility(View.VISIBLE);
+            etPassword.setVisibility(View.VISIBLE);
+            btnForgotPassword.setVisibility(View.GONE);
+            btnNativeLogin.setText("Create Account");
+            tvToggleInfo.setText("Already have an account? ");
+            btnToggleSignup.setText("Log In");
+        } else if (mode == FormMode.FORGOT_PASSWORD) {
+            tvFormTitle.setText("RESET PASSWORD");
+            etName.setVisibility(View.GONE);
+            etEmail.setVisibility(View.VISIBLE);
+            etPassword.setVisibility(View.GONE);
+            btnForgotPassword.setVisibility(View.GONE);
+            btnNativeLogin.setText("Send Reset Link");
+            tvToggleInfo.setText("Remembered your password? ");
+            btnToggleSignup.setText("Log In");
+        }
+    }
+
     private void setupLoginListeners() {
-        // Toggle Sign Up Mode
+        // Toggle Sign Up Mode Footer
         btnToggleSignup.setOnClickListener(v -> {
-            isSignUpMode = !isSignUpMode;
-            if (isSignUpMode) {
-                btnNativeLogin.setText("Create Account");
-                tvToggleInfo.setText("Already have an account? ");
-                btnToggleSignup.setText("Log In");
-                btnForgotPassword.setVisibility(View.GONE);
+            if (currentFormMode == FormMode.LOGIN) {
+                setFormMode(FormMode.SIGN_UP);
             } else {
-                btnNativeLogin.setText("Log In");
-                tvToggleInfo.setText("Don't have an account? ");
-                btnToggleSignup.setText("Create Account");
-                btnForgotPassword.setVisibility(View.VISIBLE);
+                setFormMode(FormMode.LOGIN);
             }
+        });
+
+        // Circular Email Toggle Button Listener
+        btnEmailToggle.setOnClickListener(v -> {
+            if (credentialsCard.getVisibility() == View.VISIBLE) {
+                credentialsCard.setVisibility(View.GONE);
+            } else {
+                credentialsCard.setVisibility(View.VISIBLE);
+                setFormMode(FormMode.LOGIN);
+            }
+        });
+
+        // Forgot Password Click inside Card
+        btnForgotPassword.setOnClickListener(v -> {
+            setFormMode(FormMode.FORGOT_PASSWORD);
         });
 
         // Native Login Button Handler
         btnNativeLogin.setOnClickListener(v -> {
             String email = etEmail.getText().toString().trim();
-            String password = etPassword.getText().toString().trim();
 
+            if (currentFormMode == FormMode.FORGOT_PASSWORD) {
+                if (email.isEmpty()) {
+                    Toast.makeText(this, "Please enter your email address.", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.VISIBLE));
+                mAuth.sendPasswordResetEmail(email)
+                        .addOnCompleteListener(task -> {
+                            runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
+                            if (task.isSuccessful()) {
+                                Toast.makeText(MainActivity.this, "Password reset email sent successfully.", Toast.LENGTH_SHORT).show();
+                                setFormMode(FormMode.LOGIN);
+                            } else {
+                                Toast.makeText(MainActivity.this, "Failed to send reset email: " +
+                                        (task.getException() != null ? task.getException().getMessage() : "Unknown Error"),
+                                        Toast.LENGTH_LONG).show();
+                            }
+                        });
+                return;
+            }
+
+            String password = etPassword.getText().toString().trim();
             if (email.isEmpty() || password.isEmpty()) {
                 Toast.makeText(this, "Please fill in all email and password fields.", Toast.LENGTH_SHORT).show();
                 return;
@@ -319,14 +397,26 @@ public class MainActivity extends AppCompatActivity {
 
             runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.VISIBLE));
 
-            if (isSignUpMode) {
+            if (currentFormMode == FormMode.SIGN_UP) {
+                String name = etName.getText().toString().trim();
+                if (name.isEmpty()) {
+                    runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
+                    Toast.makeText(this, "Please enter your name.", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
                 // Firebase Create User
                 mAuth.createUserWithEmailAndPassword(email, password)
                         .addOnCompleteListener(this, task -> {
                             if (task.isSuccessful()) {
                                 FirebaseUser user = mAuth.getCurrentUser();
                                 if (user != null) {
-                                    fetchTokenAndLoadWeb(user);
+                                    UserProfileChangeRequest profileUpdates = new UserProfileChangeRequest.Builder()
+                                            .setDisplayName(name)
+                                            .build();
+                                    user.updateProfile(profileUpdates).addOnCompleteListener(profileTask -> {
+                                        fetchTokenAndLoadWeb(user);
+                                    });
                                 }
                             } else {
                                 runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
@@ -357,40 +447,10 @@ public class MainActivity extends AppCompatActivity {
         // Google Sign-In Click
         btnGoogleSignin.setOnClickListener(v -> {
             runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.VISIBLE));
-            Intent signInIntent = mGoogleSignInClient.getSignInIntent();
-            startActivityForResult(signInIntent, GOOGLE_SIGN_IN_REQUEST_CODE);
-        });
-
-        // Forgot Password Click
-        btnForgotPassword.setOnClickListener(v -> {
-            AlertDialog.Builder builder = new AlertDialog.Builder(this);
-            builder.setTitle("Reset Password");
-            builder.setMessage("Enter your email address below to receive password recovery instructions:");
-
-            final EditText input = new EditText(this);
-            input.setInputType(android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
-            input.setPadding(32, 16, 32, 16);
-            builder.setView(input);
-
-            builder.setPositiveButton("Send Link", (dialog, which) -> {
-                String email = input.getText().toString().trim();
-                if (!email.isEmpty()) {
-                    mAuth.sendPasswordResetEmail(email)
-                            .addOnCompleteListener(task -> {
-                                if (task.isSuccessful()) {
-                                    Toast.makeText(MainActivity.this, "Password reset email sent successfully.", Toast.LENGTH_SHORT).show();
-                                } else {
-                                    Toast.makeText(MainActivity.this, "Failed to send reset email: " +
-                                            (task.getException() != null ? task.getException().getMessage() : "Unknown Error"),
-                                            Toast.LENGTH_LONG).show();
-                                }
-                            });
-                } else {
-                    Toast.makeText(MainActivity.this, "Email address cannot be empty.", Toast.LENGTH_SHORT).show();
-                }
+            mGoogleSignInClient.signOut().addOnCompleteListener(task -> {
+                Intent signInIntent = mGoogleSignInClient.getSignInIntent();
+                startActivityForResult(signInIntent, GOOGLE_SIGN_IN_REQUEST_CODE);
             });
-            builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
-            builder.show();
         });
 
         // Retry Connection click handler
