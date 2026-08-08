@@ -3,6 +3,7 @@ package com.umar.yaraan.chate;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
+import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -33,6 +34,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.OnBackPressedCallback;
@@ -61,6 +63,7 @@ public class MainActivity extends AppCompatActivity {
     private FrameLayout webViewContainer;
     private WebView webView;
     private WebView popupWebView;
+    private Dialog popupDialog;
     private RelativeLayout splashScreen;
     private LinearLayout offlineScreen;
     private Button btnRetry;
@@ -112,6 +115,7 @@ public class MainActivity extends AppCompatActivity {
         etPassword = findViewById(R.id.et_password);
         btnNativeLogin = findViewById(R.id.btn_native_login);
         btnNativeGoogle = findViewById(R.id.btn_native_google);
+        TextView tvForgotPassword = findViewById(R.id.tv_forgot_password);
 
         // 2. Setup WebView and Settings
         setupWebView();
@@ -121,6 +125,17 @@ public class MainActivity extends AppCompatActivity {
 
         // 4. Retry connection click handler
         btnRetry.setOnClickListener(v -> attemptLoadUrl());
+
+        tvForgotPassword.setOnClickListener(v -> {
+            if (!isNetworkConnected()) {
+                Toast.makeText(this, "No internet connection. Please check your network.", Toast.LENGTH_SHORT).show();
+                showOfflineScreen();
+                return;
+            }
+            // Hide native login to let WebView show web forgot password modal
+            nativeLoginScreen.setVisibility(View.GONE);
+            webView.evaluateJavascript("if (window.openForgotPasswordModal) { window.openForgotPasswordModal(); }", null);
+        });
 
         // Setup native login click listeners
         btnNativeLogin.setOnClickListener(v -> {
@@ -269,11 +284,26 @@ public class MainActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
 
-                // Inject CSS to completely hide the website's login screen (#view-auth)
+                // Inject CSS to hide ONLY the website's login inputs and controls, keeping the premium background animation
                 webView.evaluateJavascript(
                     "var style = document.createElement('style'); " +
-                    "style.innerHTML = '#view-auth { display: none !important; }'; " +
+                    "style.innerHTML = '#auth-content-wrapper { display: none !important; }'; " +
                     "document.head.appendChild(style);", null);
+
+                // Intercept closeForgotPasswordModal to notify Android
+                webView.evaluateJavascript(
+                    "(function() { " +
+                    "    if (window.openForgotPasswordModal && !window._forgotPasswordHooked) { " +
+                    "        window._forgotPasswordHooked = true; " +
+                    "        const originalClose = window.closeForgotPasswordModal; " +
+                    "        window.closeForgotPasswordModal = function() { " +
+                    "            if (originalClose) originalClose(); " +
+                    "            if (window.YaraanAppChannel) { " +
+                    "                window.YaraanAppChannel.postMessage(JSON.stringify({type: 'forgot_password_closed'})); " +
+                    "            } " +
+                    "        }; " +
+                    "    } " +
+                    "})();", null);
 
                 // Inject dynamic auth state listener to notify Android on successful login
                 webView.evaluateJavascript(
@@ -435,9 +465,12 @@ public class MainActivity extends AppCompatActivity {
             @SuppressLint("SetJavaScriptEnabled")
             @Override
             public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, android.os.Message resultMsg) {
-                // If there's an existing popup webview, clean it up first
+                // If there's an existing popup webview/dialog, clean it up first
+                if (popupDialog != null && popupDialog.isShowing()) {
+                    popupDialog.dismiss();
+                    popupDialog = null;
+                }
                 if (popupWebView != null) {
-                    webViewContainer.removeView(popupWebView);
                     popupWebView.destroy();
                     popupWebView = null;
                 }
@@ -489,12 +522,35 @@ public class MainActivity extends AppCompatActivity {
                     }
                 });
 
+                // Host popupWebView inside a native full-screen Dialog
+                popupDialog = new Dialog(MainActivity.this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+                popupDialog.setContentView(popupWebView);
+                popupDialog.setCancelable(true);
+
+                // If user cancels the dialog (e.g. by pressing back button), handle cleanup
+                popupDialog.setOnCancelListener(dialog -> {
+                    if (popupWebView != null) {
+                        popupWebView.destroy();
+                        popupWebView = null;
+                    }
+                    popupDialog = null;
+                    SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
+                    boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
+                    if (!isLoggedIn) {
+                        showNativeLoginScreen();
+                        resetLoginButtons();
+                    }
+                });
+
                 popupWebView.setWebChromeClient(new WebChromeClient() {
                     @Override
                     public void onCloseWindow(WebView window) {
                         super.onCloseWindow(window);
+                        if (popupDialog != null && popupDialog.isShowing()) {
+                            popupDialog.dismiss();
+                            popupDialog = null;
+                        }
                         if (popupWebView != null) {
-                            webViewContainer.removeView(popupWebView);
                             popupWebView.destroy();
                             popupWebView = null;
                         }
@@ -508,7 +564,8 @@ public class MainActivity extends AppCompatActivity {
                     }
                 });
 
-                webViewContainer.addView(popupWebView);
+                popupDialog.show();
+
                 WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
                 transport.setWebView(popupWebView);
                 resultMsg.sendToTarget();
@@ -614,10 +671,13 @@ public class MainActivity extends AppCompatActivity {
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
-                if (popupWebView != null) {
-                    webViewContainer.removeView(popupWebView);
-                    popupWebView.destroy();
-                    popupWebView = null;
+                if (popupDialog != null && popupDialog.isShowing()) {
+                    popupDialog.dismiss();
+                    popupDialog = null;
+                    if (popupWebView != null) {
+                        popupWebView.destroy();
+                        popupWebView = null;
+                    }
                     // Recover native login UI layout if they cancel out of popup
                     SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
                     boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
@@ -627,6 +687,17 @@ public class MainActivity extends AppCompatActivity {
                     }
                 } else if (nativeLoginScreen.getVisibility() == View.VISIBLE) {
                     finish();
+                } else if (nativeLoginScreen.getVisibility() != View.VISIBLE) {
+                    SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
+                    boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
+                    if (!isLoggedIn) {
+                        // User is in forgot password modal, close it and return to native login
+                        webView.evaluateJavascript("if (window.closeForgotPasswordModal) { window.closeForgotPasswordModal(); }", null);
+                    } else if (webView.canGoBack()) {
+                        webView.goBack();
+                    } else {
+                        finish();
+                    }
                 } else if (webView.canGoBack()) {
                     webView.goBack();
                 } else {
@@ -778,6 +849,8 @@ public class MainActivity extends AppCompatActivity {
                     String errorMsg = json.optString("message", "Authentication failed");
                     Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show();
                     resetLoginButtons();
+                } else if (type.equals("forgot_password_closed")) {
+                    showNativeLoginScreen();
                 }
             }
         } catch (Exception e) {
@@ -787,7 +860,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void showNativeLoginScreen() {
         runOnUiThread(() -> {
-            webView.setVisibility(View.GONE);
+            webView.setVisibility(View.VISIBLE);
             nativeLoginScreen.setVisibility(View.VISIBLE);
         });
     }
