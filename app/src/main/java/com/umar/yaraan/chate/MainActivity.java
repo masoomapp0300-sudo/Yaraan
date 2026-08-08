@@ -6,6 +6,7 @@ import android.annotation.TargetApi;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.ConnectivityManager;
@@ -14,16 +15,15 @@ import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.content.SharedPreferences;
-import org.json.JSONObject;
-import android.webkit.JavascriptInterface;
-import android.widget.EditText;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.MediaStore;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.animation.AlphaAnimation;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -31,23 +31,30 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.VideoView;
 
 import androidx.activity.OnBackPressedCallback;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+
+import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -68,14 +75,31 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout offlineScreen;
     private Button btnRetry;
 
-    // Native Login UI fields
+    // Native Login UI Container & Background Video
     private RelativeLayout nativeLoginScreen;
-    private EditText etEmail, etPassword;
-    private Button btnNativeLogin, btnNativeGoogle;
+    private VideoView videoView;
+
+    // Email form section views
+    private RelativeLayout sectionInitialLogin;
+    private RelativeLayout sectionEmailLogin;
+    private EditText etName, etEmail, etPassword;
+    private TextView tvFormTitle, tvForgotPassword, tvToggleMode;
+    private Button btnNativeLogin;
+    private LinearLayout btnNativeGoogle;
+    private LinearLayout btnOpenEmailScreen;
+    private ImageView btnBackToInitial;
 
     // File upload variables
     private ValueCallback<Uri[]> filePathCallback;
     private String cameraPhotoPath;
+
+    // Form states
+    private enum FormMode {
+        LOGIN,
+        REGISTER,
+        FORGOT_PASSWORD
+    }
+    private FormMode currentFormMode = FormMode.LOGIN;
 
     // Permissions to request at startup or dynamically
     private final String[] requiredPermissions = {
@@ -90,7 +114,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // 1. Configure Full-Screen Transparent Status Bar
+        // 1. Configure Full-Screen Transparent Status Bar & Immersive Mode
         configureFullScreen();
 
         setContentView(R.layout.activity_main);
@@ -105,17 +129,32 @@ public class MainActivity extends AppCompatActivity {
             v.setPadding(0, statusBarHeight, 0, 0);
             return insets;
         });
+
         splashScreen = findViewById(R.id.splash_screen);
         offlineScreen = findViewById(R.id.offline_screen);
         btnRetry = findViewById(R.id.btn_retry);
 
         // Initialize Native Login Views
         nativeLoginScreen = findViewById(R.id.native_login_screen);
+        videoView = findViewById(R.id.video_view);
+
+        sectionInitialLogin = findViewById(R.id.section_initial_login);
+        sectionEmailLogin = findViewById(R.id.section_email_login);
+
+        btnNativeGoogle = findViewById(R.id.btn_native_google);
+        btnOpenEmailScreen = findViewById(R.id.btn_open_email_screen);
+        btnBackToInitial = findViewById(R.id.btn_back_to_initial);
+
+        etName = findViewById(R.id.et_name);
         etEmail = findViewById(R.id.et_email);
         etPassword = findViewById(R.id.et_password);
+        tvFormTitle = findViewById(R.id.tv_form_title);
+        tvForgotPassword = findViewById(R.id.tv_forgot_password);
+        tvToggleMode = findViewById(R.id.tv_toggle_mode);
         btnNativeLogin = findViewById(R.id.btn_native_login);
-        btnNativeGoogle = findViewById(R.id.btn_native_google);
-        TextView tvForgotPassword = findViewById(R.id.tv_forgot_password);
+
+        // Start background video playback on native screen
+        setupBackgroundVideo();
 
         // 2. Setup WebView and Settings
         setupWebView();
@@ -126,34 +165,58 @@ public class MainActivity extends AppCompatActivity {
         // 4. Retry connection click handler
         btnRetry.setOnClickListener(v -> attemptLoadUrl());
 
-        tvForgotPassword.setOnClickListener(v -> {
-            if (!isNetworkConnected()) {
-                Toast.makeText(this, "No internet connection. Please check your network.", Toast.LENGTH_SHORT).show();
-                showOfflineScreen();
-                return;
-            }
-            // Hide native login to let WebView show web forgot password modal
-            nativeLoginScreen.setVisibility(View.GONE);
-            webView.evaluateJavascript("if (window.openForgotPasswordModal) { window.openForgotPasswordModal(); }", null);
+        // Toggle visibility between initial screen and email form screen
+        btnOpenEmailScreen.setOnClickListener(v -> {
+            sectionInitialLogin.setVisibility(View.GONE);
+            sectionEmailLogin.setVisibility(View.VISIBLE);
+            updateFormMode(FormMode.LOGIN);
         });
 
-        // Setup native login click listeners
+        btnBackToInitial.setOnClickListener(v -> {
+            sectionEmailLogin.setVisibility(View.GONE);
+            sectionInitialLogin.setVisibility(View.VISIBLE);
+        });
+
+        tvForgotPassword.setOnClickListener(v -> updateFormMode(FormMode.FORGOT_PASSWORD));
+
+        tvToggleMode.setOnClickListener(v -> {
+            if (currentFormMode == FormMode.LOGIN) {
+                updateFormMode(FormMode.REGISTER);
+            } else {
+                updateFormMode(FormMode.LOGIN);
+            }
+        });
+
+        // Setup native email action submit click listener
         btnNativeLogin.setOnClickListener(v -> {
             if (!isNetworkConnected()) {
                 Toast.makeText(this, "No internet connection. Please check your network.", Toast.LENGTH_SHORT).show();
                 showOfflineScreen();
                 return;
             }
+
             String email = etEmail.getText().toString().trim();
             String password = etPassword.getText().toString();
-            if (email.isEmpty() || password.isEmpty()) {
-                Toast.makeText(this, "Please enter email and password", Toast.LENGTH_SHORT).show();
+            String name = etName.getText().toString().trim();
+
+            if (email.isEmpty() || !email.contains("@")) {
+                etEmail.setError("Please enter a valid email");
+                return;
+            }
+
+            if (currentFormMode != FormMode.FORGOT_PASSWORD && password.isEmpty()) {
+                etPassword.setError("Please enter a password");
+                return;
+            }
+
+            if (currentFormMode == FormMode.REGISTER && name.isEmpty()) {
+                etName.setError("Please enter your name");
                 return;
             }
 
             // Set UI to loading state
             btnNativeLogin.setEnabled(false);
-            btnNativeLogin.setText("Signing in...");
+            btnNativeLogin.setText("Processing...");
             btnNativeGoogle.setEnabled(false);
 
             // Set 10-second safety timeout to reset buttons if request hangs
@@ -165,22 +228,58 @@ public class MainActivity extends AppCompatActivity {
                 "var cb = document.getElementById('privacy-checkbox'); " +
                 "if (cb) { cb.checked = true; }", null);
 
-            // Safely construct JSON payload to prevent escaping/special-character bugs
-            try {
-                JSONObject jsonPayload = new JSONObject();
-                jsonPayload.put("type", "emailLogin");
-                jsonPayload.put("email", email);
-                jsonPayload.put("password", password);
+            if (currentFormMode == FormMode.LOGIN) {
+                // Perform web login via PostMessage API
+                try {
+                    JSONObject jsonPayload = new JSONObject();
+                    jsonPayload.put("type", "emailLogin");
+                    jsonPayload.put("email", email);
+                    jsonPayload.put("password", password);
 
-                String js = "window.postMessage(" + jsonPayload.toString() + ", '*');";
+                    String js = "window.postMessage(" + jsonPayload.toString() + ", '*');";
+                    webView.evaluateJavascript(js, null);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    Toast.makeText(this, "Login initialization failed", Toast.LENGTH_SHORT).show();
+                    resetLoginButtons();
+                }
+            } else if (currentFormMode == FormMode.REGISTER) {
+                // Inject credentials, switch web auth to signup mode, and dispatch form submit natively
+                String escapedName = name.replace("\"", "\\\"");
+                String escapedEmail = email.replace("\"", "\\\"");
+                String escapedPassword = password.replace("\"", "\\\"");
+
+                String js = "(function() { " +
+                        "    if (typeof isSignup !== 'undefined' && !isSignup) { " +
+                        "        window.toggleAuthMode(); " +
+                        "    } " +
+                        "    var userField = document.getElementById('username'); " +
+                        "    var emailField = document.getElementById('email'); " +
+                        "    var passField = document.getElementById('password'); " +
+                        "    if (userField) userField.value = \"" + escapedName + "\"; " +
+                        "    if (emailField) emailField.value = \"" + escapedEmail + "\"; " +
+                        "    if (passField) passField.value = \"" + escapedPassword + "\"; " +
+                        "    var form = document.getElementById('auth-form'); " +
+                        "    if (form) { " +
+                        "        form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); " +
+                        "    } " +
+                        "})();";
                 webView.evaluateJavascript(js, null);
-            } catch (Exception e) {
-                e.printStackTrace();
-                Toast.makeText(this, "Login initialization failed", Toast.LENGTH_SHORT).show();
+            } else if (currentFormMode == FormMode.FORGOT_PASSWORD) {
+                // Fill web forgot password input and trigger otp reset natively
+                String escapedEmail = email.replace("\"", "\\\"");
+                String js = "(function() { " +
+                        "    var fpField = document.getElementById('fp-email-input'); " +
+                        "    if (fpField) fpField.value = \"" + escapedEmail + "\"; " +
+                        "    if (window.sendForgotPasswordOTP) { window.sendForgotPasswordOTP(); } " +
+                        "})();";
+                webView.evaluateJavascript(js, null);
+                // Since reset is done in sweetalert and won't trigger auth state changes, release UI loading state immediately
                 resetLoginButtons();
             }
         });
 
+        // Native Google sign-in trigger
         btnNativeGoogle.setOnClickListener(v -> {
             if (!isNetworkConnected()) {
                 Toast.makeText(this, "No internet connection. Please check your network.", Toast.LENGTH_SHORT).show();
@@ -189,16 +288,14 @@ public class MainActivity extends AppCompatActivity {
             }
             // Set UI to loading state
             btnNativeGoogle.setEnabled(false);
-            btnNativeGoogle.setText("Opening Google...");
             btnNativeLogin.setEnabled(false);
 
             // Set 10-second safety timeout
             timeoutHandler.removeCallbacks(timeoutRunnable);
             timeoutHandler.postDelayed(timeoutRunnable, 10000);
 
-            // Show webview so the user can complete Google Sign-In
+            // Display WebView temporarily so user can login using Google Popup Dialog
             webView.setVisibility(View.VISIBLE);
-            nativeLoginScreen.setVisibility(View.GONE);
 
             // Programmatically auto-check privacy policy checkbox on the website to bypass block
             webView.evaluateJavascript(
@@ -206,7 +303,7 @@ public class MainActivity extends AppCompatActivity {
                 "if (cb) { cb.checked = true; }", null);
 
             // Trigger web's standard Google Login
-            webView.evaluateJavascript("window.handleGoogleLoginTrigger();", null);
+            webView.evaluateJavascript("if (window.handleGoogleLoginTrigger) { window.handleGoogleLoginTrigger(); }", null);
         });
 
         // 5. Request necessary runtime permissions
@@ -236,6 +333,83 @@ public class MainActivity extends AppCompatActivity {
                 );
             }
         }
+    }
+
+    private void setupBackgroundVideo() {
+        try {
+            File videoFile = getAssetVideoFile();
+            if (videoFile.exists() && videoFile.length() > 0) {
+                videoView.setVideoPath(videoFile.getAbsolutePath());
+                videoView.setOnPreparedListener(mp -> {
+                    mp.setLooping(true);
+                    mp.setVolume(0f, 0f); // Play silently
+                    videoView.start();
+                });
+                videoView.setOnErrorListener((mp, what, extra) -> {
+                    videoView.setVisibility(View.GONE);
+                    return true;
+                });
+            } else {
+                videoView.setVisibility(View.GONE);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            videoView.setVisibility(View.GONE);
+        }
+    }
+
+    private File getAssetVideoFile() {
+        File file = new File(getCacheDir(), "bg_login.mp4");
+        try (InputStream is = getAssets().open("bg_login.mp4");
+             FileOutputStream os = new FileOutputStream(file)) {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = is.read(buffer)) != -1) {
+                os.write(buffer, 0, read);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return file;
+    }
+
+    private void updateFormMode(FormMode mode) {
+        currentFormMode = mode;
+        runOnUiThread(() -> {
+            etName.setError(null);
+            etEmail.setError(null);
+            etPassword.setError(null);
+
+            switch (mode) {
+                case LOGIN:
+                    tvFormTitle.setText("Sign In");
+                    etName.setVisibility(View.GONE);
+                    etEmail.setVisibility(View.VISIBLE);
+                    etPassword.setVisibility(View.VISIBLE);
+                    tvForgotPassword.setVisibility(View.VISIBLE);
+                    btnNativeLogin.setText("Sign In");
+                    tvToggleMode.setText("Don't have an account? Create one");
+                    break;
+                case REGISTER:
+                    tvFormTitle.setText("Create Account");
+                    etName.setVisibility(View.VISIBLE);
+                    etEmail.setVisibility(View.VISIBLE);
+                    etPassword.setVisibility(View.VISIBLE);
+                    tvForgotPassword.setVisibility(View.GONE);
+                    btnNativeLogin.setText("Create Account");
+                    tvToggleMode.setText("Already have an account? Sign In");
+                    break;
+                case FORGOT_PASSWORD:
+                    tvFormTitle.setText("Reset Password");
+                    etName.setVisibility(View.GONE);
+                    etEmail.setVisibility(View.VISIBLE);
+                    etPassword.setVisibility(View.GONE);
+                    tvForgotPassword.setVisibility(View.GONE);
+                    btnNativeLogin.setText("Send Reset Link");
+                    tvToggleMode.setText("Back to Sign In");
+                    break;
+            }
+        });
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -274,6 +448,7 @@ public class MainActivity extends AppCompatActivity {
         if (originalUserAgent != null) {
             String cleanUserAgent = originalUserAgent.replace("; wv", "");
             cleanUserAgent = cleanUserAgent.replaceAll("Version/[0-9.]+\\s?", "");
+            cleanUserAgent = cleanUserAgent + " YaraanFlutterApp";
             settings.setUserAgentString(cleanUserAgent);
         }
 
@@ -284,26 +459,11 @@ public class MainActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
 
-                // Inject CSS to hide ONLY the website's login inputs and controls, keeping the premium background animation
+                // Inject CSS to completely hide/bypass the website's built-in login screen (#view-auth)
                 webView.evaluateJavascript(
                     "var style = document.createElement('style'); " +
-                    "style.innerHTML = '#auth-content-wrapper { display: none !important; }'; " +
+                    "style.innerHTML = '#view-auth { display: none !important; }'; " +
                     "document.head.appendChild(style);", null);
-
-                // Intercept closeForgotPasswordModal to notify Android
-                webView.evaluateJavascript(
-                    "(function() { " +
-                    "    if (window.openForgotPasswordModal && !window._forgotPasswordHooked) { " +
-                    "        window._forgotPasswordHooked = true; " +
-                    "        const originalClose = window.closeForgotPasswordModal; " +
-                    "        window.closeForgotPasswordModal = function() { " +
-                    "            if (originalClose) originalClose(); " +
-                    "            if (window.YaraanAppChannel) { " +
-                    "                window.YaraanAppChannel.postMessage(JSON.stringify({type: 'forgot_password_closed'})); " +
-                    "            } " +
-                    "        }; " +
-                    "    } " +
-                    "})();", null);
 
                 // Inject dynamic auth state listener to notify Android on successful login
                 webView.evaluateJavascript(
@@ -506,6 +666,7 @@ public class MainActivity extends AppCompatActivity {
                 if (originalUA != null) {
                     String cleanUA = originalUA.replace("; wv", "");
                     cleanUA = cleanUA.replaceAll("Version/[0-9.]+\\s?", "");
+                    cleanUA = cleanUA + " YaraanFlutterApp";
                     popupSettings.setUserAgentString(cleanUA);
                 }
 
@@ -685,19 +846,13 @@ public class MainActivity extends AppCompatActivity {
                         showNativeLoginScreen();
                         resetLoginButtons();
                     }
+                } else if (sectionEmailLogin.getVisibility() == View.VISIBLE) {
+                    runOnUiThread(() -> {
+                        sectionEmailLogin.setVisibility(View.GONE);
+                        sectionInitialLogin.setVisibility(View.VISIBLE);
+                    });
                 } else if (nativeLoginScreen.getVisibility() == View.VISIBLE) {
                     finish();
-                } else if (nativeLoginScreen.getVisibility() != View.VISIBLE) {
-                    SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-                    boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
-                    if (!isLoggedIn) {
-                        // User is in forgot password modal, close it and return to native login
-                        webView.evaluateJavascript("if (window.closeForgotPasswordModal) { window.closeForgotPasswordModal(); }", null);
-                    } else if (webView.canGoBack()) {
-                        webView.goBack();
-                    } else {
-                        finish();
-                    }
                 } else if (webView.canGoBack()) {
                     webView.goBack();
                 } else {
@@ -767,8 +922,19 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (videoView != null && nativeLoginScreen.getVisibility() == View.VISIBLE) {
+            videoView.start();
+        }
+    }
+
+    @Override
     protected void onPause() {
         super.onPause();
+        if (videoView != null) {
+            videoView.pause();
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             android.webkit.CookieManager.getInstance().flush();
         }
@@ -777,6 +943,9 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         unregisterNetworkCallback();
+        if (videoView != null) {
+            videoView.stopPlayback();
+        }
         super.onDestroy();
     }
 
@@ -784,7 +953,7 @@ public class MainActivity extends AppCompatActivity {
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         if (cm != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                android.net.Network network = cm.getActiveNetwork();
+                Network network = cm.getActiveNetwork();
                 if (network != null) {
                     NetworkCapabilities capabilities = cm.getNetworkCapabilities(network);
                     return capabilities != null && (
@@ -860,28 +1029,33 @@ public class MainActivity extends AppCompatActivity {
 
     private void showNativeLoginScreen() {
         runOnUiThread(() -> {
-            webView.setVisibility(View.VISIBLE);
+            webView.setVisibility(View.INVISIBLE); // Keep WebView completely hidden/bypassed so they never see it
             nativeLoginScreen.setVisibility(View.VISIBLE);
+            if (videoView != null) {
+                videoView.start();
+            }
         });
     }
 
     private void hideNativeLoginScreen() {
         runOnUiThread(() -> {
             nativeLoginScreen.setVisibility(View.GONE);
-            webView.setVisibility(View.VISIBLE);
+            webView.setVisibility(View.VISIBLE); // Switch fully to the authenticated web layout
+            if (videoView != null) {
+                videoView.pause();
+            }
         });
     }
 
-    private final android.os.Handler timeoutHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Handler timeoutHandler = new Handler(Looper.getMainLooper());
     private final Runnable timeoutRunnable = this::resetLoginButtons;
 
     private void resetLoginButtons() {
         runOnUiThread(() -> {
             timeoutHandler.removeCallbacks(timeoutRunnable);
             btnNativeLogin.setEnabled(true);
-            btnNativeLogin.setText("Sign In");
+            btnNativeLogin.setText(currentFormMode == FormMode.LOGIN ? "Sign In" : (currentFormMode == FormMode.REGISTER ? "Create Account" : "Send Reset Link"));
             btnNativeGoogle.setEnabled(true);
-            btnNativeGoogle.setText("Sign in with Google");
         });
     }
 
