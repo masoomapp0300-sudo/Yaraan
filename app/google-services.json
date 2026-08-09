@@ -8,42 +8,18 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:740464208491:android:7034c6b6bf2d6d2ca09f2e",
+        "mobilesdk_app_id": "1:740464208491:android:256ca7d21147f04ca09f2e",
         "android_client_info": {
-          "package_name": "com.umar.yaraan"
+          "package_name": "com.umar.yaraan.chate"
         }
       },
       "oauth_client": [
         {
-          "client_id": "740464208491-0fo2r348qo2ovbrl9b6e7aig3gj2rvpq.apps.googleusercontent.com",
+          "client_id": "740464208491-c4pt68crdjudvhg92j6p3t6or2jch9t9.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.umar.yaraan",
-            "certificate_hash": "70e4ca2b3a0fda0cb60151e6cafce561f53b6bff"
-          }
-        },
-        {
-          "client_id": "740464208491-54vrc980qpudcftbv02rkb6tta9l3k79.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.umar.yaraan",
-            "certificate_hash": "63c480d8efa2a09cb2b1474ffb6192317c071a01"
-          }
-        },
-        {
-          "client_id": "740464208491-avpe2dq2nqc4bblpu9ai6tpcip9a2q19.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.umar.yaraan",
+            "package_name": "com.umar.yaraan.chate",
             "certificate_hash": "280493104b31edd979da6d826d341414c96f6ddf"
-          }
-        },
-        {
-          "client_id": "740464208491-m435f9ucgi85qt57oh39ee3go2u0t8kq.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.umar.yaraan",
-            "certificate_hash": "d866e7533a11383f8e6eb290d7cd4187c640ba7f"
           }
         },
         {
