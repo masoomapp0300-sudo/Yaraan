@@ -9,7 +9,9 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.net.ConnectivityManager;
+import android.widget.CheckBox;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
@@ -89,6 +91,10 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout btnOpenEmailScreen;
     private ImageView btnBackToInitial;
 
+    // Privacy Policy UI components
+    private CheckBox cbPrivacyPolicy;
+    private TextView tvPrivacyPolicy;
+
     // File upload variables
     private ValueCallback<Uri[]> filePathCallback;
     private String cameraPhotoPath;
@@ -153,6 +159,21 @@ public class MainActivity extends AppCompatActivity {
         tvToggleMode = findViewById(R.id.tv_toggle_mode);
         btnNativeLogin = findViewById(R.id.btn_native_login);
 
+        cbPrivacyPolicy = findViewById(R.id.cb_privacy_policy);
+        tvPrivacyPolicy = findViewById(R.id.tv_privacy_policy);
+
+        if (tvPrivacyPolicy != null) {
+            tvPrivacyPolicy.setPaintFlags(tvPrivacyPolicy.getPaintFlags() | Paint.UNDERLINE_TEXT_FLAG);
+            tvPrivacyPolicy.setOnClickListener(v -> {
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://docs.google.com/document/d/1Mq4m80_848fEtMh4t3S1CZaj4yQEczCQCbWVfC_TDmM/edit?usp=drivesdk"));
+                    startActivity(intent);
+                } catch (Exception e) {
+                    Toast.makeText(this, "Unable to open Privacy Policy", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
         // Start background video playback on native screen
         setupBackgroundVideo();
 
@@ -167,6 +188,10 @@ public class MainActivity extends AppCompatActivity {
 
         // Toggle visibility between initial screen and email form screen
         btnOpenEmailScreen.setOnClickListener(v -> {
+            if (cbPrivacyPolicy != null && !cbPrivacyPolicy.isChecked()) {
+                Toast.makeText(this, "Please agree to the Privacy Policy to proceed.", Toast.LENGTH_SHORT).show();
+                return;
+            }
             sectionInitialLogin.setVisibility(View.GONE);
             sectionEmailLogin.setVisibility(View.VISIBLE);
             updateFormMode(FormMode.LOGIN);
@@ -189,6 +214,10 @@ public class MainActivity extends AppCompatActivity {
 
         // Setup native email action submit click listener
         btnNativeLogin.setOnClickListener(v -> {
+            if (cbPrivacyPolicy != null && !cbPrivacyPolicy.isChecked()) {
+                Toast.makeText(this, "Please agree to the Privacy Policy to proceed.", Toast.LENGTH_SHORT).show();
+                return;
+            }
             if (!isNetworkConnected()) {
                 Toast.makeText(this, "No internet connection. Please check your network.", Toast.LENGTH_SHORT).show();
                 showOfflineScreen();
@@ -284,6 +313,10 @@ public class MainActivity extends AppCompatActivity {
 
         // Native Google sign-in trigger
         btnNativeGoogle.setOnClickListener(v -> {
+            if (cbPrivacyPolicy != null && !cbPrivacyPolicy.isChecked()) {
+                Toast.makeText(this, "Please agree to the Privacy Policy to proceed.", Toast.LENGTH_SHORT).show();
+                return;
+            }
             if (!isNetworkConnected()) {
                 Toast.makeText(this, "No internet connection. Please check your network.", Toast.LENGTH_SHORT).show();
                 showOfflineScreen();
