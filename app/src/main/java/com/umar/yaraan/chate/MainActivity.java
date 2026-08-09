@@ -188,12 +188,10 @@ public class MainActivity extends AppCompatActivity {
         // 2. Setup WebView and Settings
         setupWebView();
 
-        // 3. Initialize Google Sign-In SDK if Client ID is already cached
+        // 3. Initialize Google Sign-In SDK with the correct Firebase Web Client ID
         SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-        String cachedClientId = prefs.getString("google_client_id", null);
-        if (cachedClientId != null) {
-            initGoogleSignIn(cachedClientId);
-        }
+        String cachedClientId = prefs.getString("google_client_id", "740464208491-r63hohlm9o2lvc40f8gffitrbe6pceq8.apps.googleusercontent.com");
+        initGoogleSignIn(cachedClientId);
 
         // 4. Setup Back Button Callback
         setupBackButton();
