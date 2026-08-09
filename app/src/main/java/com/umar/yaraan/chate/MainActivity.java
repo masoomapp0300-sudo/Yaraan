@@ -252,7 +252,8 @@ public class MainActivity extends AppCompatActivity {
                 String js = "(function() { " +
                         "    var cb = document.getElementById('privacy-checkbox'); " +
                         "    if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); } " +
-                        "    if (typeof isSignup !== 'undefined' && !isSignup) { " +
+                        "    var uFieldContainer = document.getElementById('username-field'); " +
+                        "    if (uFieldContainer && uFieldContainer.classList.contains('hidden')) { " +
                         "        window.toggleAuthMode(); " +
                         "    } " +
                         "    var userField = document.getElementById('username'); " +
@@ -296,8 +297,9 @@ public class MainActivity extends AppCompatActivity {
             timeoutHandler.removeCallbacks(timeoutRunnable);
             timeoutHandler.postDelayed(timeoutRunnable, 10000);
 
-            // Display WebView temporarily so user can login using Google Popup Dialog
-            webView.setVisibility(View.VISIBLE);
+            // Dynamically override userAgent so auth_system.js treats the client as a standard Chrome mobile browser (bypassing isAndroidWebView redirect)
+            String jsOverrideUA = "Object.defineProperty(navigator, 'userAgent', { get: function () { return 'Mozilla/5.0 (Linux; Android 13; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36'; } });";
+            webView.evaluateJavascript(jsOverrideUA, null);
 
             // Programmatically auto-check privacy policy checkbox on the website to bypass block
             webView.evaluateJavascript(

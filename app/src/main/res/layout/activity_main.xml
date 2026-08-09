@@ -120,7 +120,7 @@
         android:id="@+id/native_login_screen"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#05020a"
+        android:background="@android:color/transparent"
         android:visibility="gone"
         android:clickable="true"
         android:focusable="true">
@@ -139,7 +139,7 @@
         <View
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="#D905020a" />
+            android:background="#4D000000" />
 
         <!-- SECTION A: Initial Native Login Screen (Pill buttons for Google and Email) -->
         <RelativeLayout
