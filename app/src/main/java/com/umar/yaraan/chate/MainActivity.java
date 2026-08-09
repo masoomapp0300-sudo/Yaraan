@@ -132,10 +132,10 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // 1. Configure Full-Screen Transparent Status Bar & Immersive Mode
-        configureFullScreen();
-
         setContentView(R.layout.activity_main);
+
+        // 1. Configure Full-Screen Transparent Status Bar & Immersive Mode (Always call after setContentView for safe window attachments)
+        configureFullScreen();
 
         // Initialize UI components
         webViewContainer = findViewById(R.id.webview_container);

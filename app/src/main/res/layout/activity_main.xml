@@ -274,12 +274,10 @@
                     android:layout_width="48dp"
                     android:layout_height="48dp"
                     android:src="@drawable/ic_email"
-                    android:tint="#FFFFFF"
                     android:scaleType="fitCenter"
                     android:padding="10dp"
                     android:clickable="true"
                     android:focusable="true"
-                    android:background="?attr/selectableItemBackgroundBorderless"
                     android:layout_marginTop="16dp"
                     android:contentDescription="Email Sign-In" />
             </LinearLayout>
