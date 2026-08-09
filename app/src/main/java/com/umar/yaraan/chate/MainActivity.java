@@ -336,6 +336,11 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
+            // Programmatically auto-check privacy policy checkbox on the website to bypass block
+            webView.evaluateJavascript(
+                "var cb = document.getElementById('privacy-checkbox'); " +
+                "if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }", null);
+
             SharedPreferences prefs1 = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
             String clientId = prefs1.getString("google_client_id", null);
 
@@ -359,11 +364,6 @@ public class MainActivity extends AppCompatActivity {
                 // Dynamically override userAgent so auth_system.js treats the client as a standard Chrome mobile browser
                 String jsOverrideUA = "Object.defineProperty(navigator, 'userAgent', { get: function () { return 'Mozilla/5.0 (Linux; Android 13; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36'; } });";
                 webView.evaluateJavascript(jsOverrideUA, null);
-
-                // Programmatically auto-check privacy policy checkbox on the website to bypass block
-                webView.evaluateJavascript(
-                    "var cb = document.getElementById('privacy-checkbox'); " +
-                    "if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }", null);
 
                 // Trigger web's standard Google Login
                 webView.evaluateJavascript("if (window.handleGoogleLoginTrigger) { window.handleGoogleLoginTrigger(); }", null);
@@ -941,6 +941,11 @@ public class MainActivity extends AppCompatActivity {
                 GoogleSignInAccount account = task.getResult(ApiException.class);
                 String idToken = account.getIdToken();
                 if (idToken != null) {
+                    // Ensure checkbox is checked on web-side as well
+                    webView.evaluateJavascript(
+                        "var cb = document.getElementById('privacy-checkbox'); " +
+                        "if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }", null);
+
                     // Send Google security ID Token to the WebView
                     JSONObject jsonPayload = new JSONObject();
                     jsonPayload.put("type", "googleLogin");
