@@ -6,7 +6,7 @@
     android:background="@color/white"
     android:fitsSystemWindows="false">
 
-    <!-- 1. WebView Container with top padding slot -->
+    <!-- 1. WebView Container with top padding slot (Always true edge-to-edge fullscreen) -->
     <FrameLayout
         android:id="@+id/webview_container"
         android:layout_width="match_parent"
@@ -125,7 +125,7 @@
         android:clickable="true"
         android:focusable="true">
 
-        <!-- Background VideoView playing bg_login.mp4 -->
+        <!-- Background VideoView playing bg_login.mp4 edge-to-edge -->
         <VideoView
             android:id="@+id/video_view"
             android:layout_width="match_parent"
@@ -148,19 +148,23 @@
             android:layout_height="match_parent"
             android:visibility="visible">
 
+            <!-- 1. Top Section: Logo and App Name shifted to the very top section -->
             <LinearLayout
+                android:id="@+id/top_logo_container"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:gravity="center_horizontal"
-                android:layout_centerInParent="true"
-                android:padding="32dp">
+                android:layout_alignParentTop="true"
+                android:layout_marginTop="40dp"
+                android:paddingStart="32dp"
+                android:paddingEnd="32dp">
 
                 <!-- Logo -->
                 <ImageView
                     android:id="@+id/login_logo"
-                    android:layout_width="120dp"
-                    android:layout_height="120dp"
+                    android:layout_width="100dp"
+                    android:layout_height="100dp"
                     android:src="@drawable/app_icon"
                     android:contentDescription="@string/app_name" />
 
@@ -170,115 +174,114 @@
                     android:layout_height="wrap_content"
                     android:text="★ 𝐘𝐚𝐫𝐚𝐚𝐧 ★"
                     android:textColor="#FFFFFF"
-                    android:textSize="36sp"
+                    android:textSize="32sp"
                     android:textStyle="bold"
-                    android:layout_marginTop="16dp" />
+                    android:layout_marginTop="12dp" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="VOICE CHAT &amp; PARTY"
                     android:textColor="#9CA3AF"
-                    android:textSize="14sp"
+                    android:textSize="12sp"
                     android:letterSpacing="0.1"
-                    android:layout_marginTop="4dp" />
+                    android:layout_marginTop="2dp" />
+            </LinearLayout>
 
-                <!-- Action Buttons Container (Shifted down) -->
-                <LinearLayout
-                    android:layout_width="match_parent"
+            <!-- 3. Bottom Section: Privacy Policy shifted to the very bottom of the screen -->
+            <LinearLayout
+                android:id="@+id/bottom_privacy_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:layout_alignParentBottom="true"
+                android:layout_marginBottom="24dp"
+                android:paddingStart="24dp"
+                android:paddingEnd="24dp">
+
+                <CheckBox
+                    android:id="@+id/cb_privacy_policy"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:layout_marginTop="80dp"
-                    android:gravity="center">
+                    android:buttonTint="#FFFFFF"
+                    android:checked="false" />
 
-                    <!-- Google Sign-In Button (Official Look with ic_google PNG) -->
-                    <LinearLayout
-                        android:id="@+id/btn_native_google"
-                        android:layout_width="match_parent"
-                        android:layout_height="54dp"
-                        android:background="@android:color/white"
-                        android:gravity="center"
-                        android:orientation="horizontal"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:paddingLeft="16dp"
-                        android:paddingRight="16dp"
-                        android:layout_marginBottom="16dp">
+                <TextView
+                    android:id="@+id/tv_privacy_policy"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="I agree to the Privacy Policy"
+                    android:textColor="#FFFFFF"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:layout_marginStart="4dp" />
+            </LinearLayout>
 
-                        <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
-                            android:src="@drawable/ic_google"
-                            android:contentDescription="Google" />
+            <!-- 2. Mid-Low Section: Sign-in buttons positioned lower down, leaving center video area highly visible -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center_horizontal|bottom"
+                android:layout_above="@id/bottom_privacy_container"
+                android:layout_below="@id/top_logo_container"
+                android:layout_marginBottom="24dp"
+                android:paddingStart="40dp"
+                android:paddingEnd="40dp">
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Sign in with Google"
-                            android:textColor="#333333"
-                            android:textSize="16sp"
-                            android:textStyle="bold"
-                            android:layout_marginLeft="12dp" />
-                    </LinearLayout>
+                <!-- Empty space weight to push buttons down to lower area -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
 
-                    <!-- Email/Password Access Button -->
-                    <LinearLayout
-                        android:id="@+id/btn_open_email_screen"
-                        android:layout_width="match_parent"
-                        android:layout_height="54dp"
-                        android:background="#FF6200EE"
-                        android:gravity="center"
-                        android:orientation="horizontal"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:paddingLeft="16dp"
-                        android:paddingRight="16dp">
+                <!-- Google Sign-In Button (Fully rounded pill shaped / smooth curves) -->
+                <LinearLayout
+                    android:id="@+id/btn_native_google"
+                    android:layout_width="match_parent"
+                    android:layout_height="54dp"
+                    android:background="@drawable/bg_google_btn"
+                    android:gravity="center"
+                    android:orientation="horizontal"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingStart="24dp"
+                    android:paddingEnd="24dp"
+                    android:elevation="4dp">
 
-                        <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
-                            android:src="@drawable/ic_email"
-                            android:contentDescription="Email" />
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:src="@drawable/ic_google"
+                        android:contentDescription="Google" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Sign in with Email"
-                            android:textColor="#FFFFFF"
-                            android:textSize="16sp"
-                            android:textStyle="bold"
-                            android:layout_marginLeft="12dp" />
-                    </LinearLayout>
-
-                    <!-- Privacy Policy Checkbox and Link -->
-                    <LinearLayout
+                    <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:layout_marginTop="24dp">
-
-                        <CheckBox
-                            android:id="@+id/cb_privacy_policy"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:buttonTint="#FFFFFF"
-                            android:checked="false" />
-
-                        <TextView
-                            android:id="@+id/tv_privacy_policy"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="I agree to the Privacy Policy"
-                            android:textColor="#FFFFFF"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:clickable="true"
-                            android:focusable="true" />
-                    </LinearLayout>
-
+                        android:text="Sign in with Google"
+                        android:textColor="#333333"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:layout_marginStart="12dp" />
                 </LinearLayout>
 
+                <!-- Clean, minimalist white Email Icon ONLY positioned neatly below the Google button -->
+                <ImageView
+                    android:id="@+id/btn_open_email_screen"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@drawable/ic_email"
+                    android:tint="#FFFFFF"
+                    android:scaleType="fitCenter"
+                    android:padding="10dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:layout_marginTop="16dp"
+                    android:contentDescription="Email Sign-In" />
             </LinearLayout>
 
         </RelativeLayout>

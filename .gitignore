@@ -17,3 +17,7 @@ local.properties
 # Module-specific build directories
 app/build/
 build/
+
+# Node modules and temporary files
+node_modules/
+get_client_id.js

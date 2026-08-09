@@ -21,8 +21,11 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.view.View;
 import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.view.animation.AlphaAnimation;
 import android.webkit.JavascriptInterface;
@@ -48,8 +51,13 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
+
+import com.google.android.gms.auth.api.signin.GoogleSignIn;
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
+import com.google.android.gms.auth.api.signin.GoogleSignInClient;
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
+import com.google.android.gms.common.api.ApiException;
+import com.google.android.gms.tasks.Task;
 
 import org.json.JSONObject;
 
@@ -68,6 +76,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String TARGET_URL = "https://yaraan.online";
     private static final int PERMISSION_REQUEST_CODE = 1001;
     private static final int FILE_CHOOSER_REQUEST_CODE = 1002;
+    private static final int RC_SIGN_IN = 1003;
 
     private FrameLayout webViewContainer;
     private WebView webView;
@@ -88,7 +97,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvFormTitle, tvForgotPassword, tvToggleMode;
     private Button btnNativeLogin;
     private LinearLayout btnNativeGoogle;
-    private LinearLayout btnOpenEmailScreen;
+    private ImageView btnOpenEmailScreen;
     private ImageView btnBackToInitial;
 
     // Privacy Policy UI components
@@ -98,6 +107,9 @@ public class MainActivity extends AppCompatActivity {
     // File upload variables
     private ValueCallback<Uri[]> filePathCallback;
     private String cameraPhotoPath;
+
+    // Google Sign-In SDK
+    private GoogleSignInClient mGoogleSignInClient;
 
     // Form states
     private enum FormMode {
@@ -129,12 +141,8 @@ public class MainActivity extends AppCompatActivity {
         webViewContainer = findViewById(R.id.webview_container);
         webView = findViewById(R.id.webview);
 
-        // Apply dynamic status bar top padding to the WebView container
-        ViewCompat.setOnApplyWindowInsetsListener(webViewContainer, (v, insets) -> {
-            int statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top;
-            v.setPadding(0, statusBarHeight, 0, 0);
-            return insets;
-        });
+        // WebView matches full edge-to-edge screens seamlessly with zero padding
+        webViewContainer.setPadding(0, 0, 0, 0);
 
         splashScreen = findViewById(R.id.splash_screen);
         offlineScreen = findViewById(R.id.offline_screen);
@@ -180,10 +188,17 @@ public class MainActivity extends AppCompatActivity {
         // 2. Setup WebView and Settings
         setupWebView();
 
-        // 3. Setup Back Button Callback
+        // 3. Initialize Google Sign-In SDK if Client ID is already cached
+        SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
+        String cachedClientId = prefs.getString("google_client_id", null);
+        if (cachedClientId != null) {
+            initGoogleSignIn(cachedClientId);
+        }
+
+        // 4. Setup Back Button Callback
         setupBackButton();
 
-        // 4. Retry connection click handler
+        // 5. Retry connection click handler
         btnRetry.setOnClickListener(v -> attemptLoadUrl());
 
         // Toggle visibility between initial screen and email form screen
@@ -322,53 +337,74 @@ public class MainActivity extends AppCompatActivity {
                 showOfflineScreen();
                 return;
             }
-            // Set UI to loading state
-            btnNativeGoogle.setEnabled(false);
-            btnNativeLogin.setEnabled(false);
 
-            // Set 10-second safety timeout
-            timeoutHandler.removeCallbacks(timeoutRunnable);
-            timeoutHandler.postDelayed(timeoutRunnable, 10000);
+            SharedPreferences prefs1 = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
+            String clientId = prefs1.getString("google_client_id", null);
 
-            // Dynamically override userAgent so auth_system.js treats the client as a standard Chrome mobile browser (bypassing isAndroidWebView redirect)
-            String jsOverrideUA = "Object.defineProperty(navigator, 'userAgent', { get: function () { return 'Mozilla/5.0 (Linux; Android 13; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36'; } });";
-            webView.evaluateJavascript(jsOverrideUA, null);
+            if (clientId != null && mGoogleSignInClient != null) {
+                // Trigger modern Google accounts chooser bottom sheet
+                btnNativeGoogle.setEnabled(false);
+                btnNativeLogin.setEnabled(false);
+                mGoogleSignInClient.signOut().addOnCompleteListener(task -> {
+                    Intent signInIntent = mGoogleSignInClient.getSignInIntent();
+                    startActivityForResult(signInIntent, RC_SIGN_IN);
+                });
+            } else {
+                // Cold-start fallback: Let main WebView load Google login programmatically to capture Google's client ID first
+                btnNativeGoogle.setEnabled(false);
+                btnNativeLogin.setEnabled(false);
 
-            // Programmatically auto-check privacy policy checkbox on the website to bypass block
-            webView.evaluateJavascript(
-                "var cb = document.getElementById('privacy-checkbox'); " +
-                "if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }", null);
+                // Set 15-second safety timeout
+                timeoutHandler.removeCallbacks(timeoutRunnable);
+                timeoutHandler.postDelayed(timeoutRunnable, 15000);
 
-            // Trigger web's standard Google Login
-            webView.evaluateJavascript("if (window.handleGoogleLoginTrigger) { window.handleGoogleLoginTrigger(); }", null);
+                // Dynamically override userAgent so auth_system.js treats the client as a standard Chrome mobile browser
+                String jsOverrideUA = "Object.defineProperty(navigator, 'userAgent', { get: function () { return 'Mozilla/5.0 (Linux; Android 13; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36'; } });";
+                webView.evaluateJavascript(jsOverrideUA, null);
+
+                // Programmatically auto-check privacy policy checkbox on the website to bypass block
+                webView.evaluateJavascript(
+                    "var cb = document.getElementById('privacy-checkbox'); " +
+                    "if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }", null);
+
+                // Trigger web's standard Google Login
+                webView.evaluateJavascript("if (window.handleGoogleLoginTrigger) { window.handleGoogleLoginTrigger(); }", null);
+            }
         });
 
-        // 5. Request necessary runtime permissions
+        // 6. Request necessary runtime permissions
         checkAndRequestPermissions();
 
         // Register dynamic network callback for auto-reconnect
         registerNetworkCallback();
 
-        // 6. Start loading
+        // 7. Start loading TARGET_URL
         attemptLoadUrl();
     }
 
     private void configureFullScreen() {
+        Window window = getWindow();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            Window window = getWindow();
             window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
             window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-            window.getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-            );
             window.setStatusBarColor(Color.TRANSPARENT);
+        }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                // Ensure status bar icons are visible on light splash background
-                window.getDecorView().setSystemUiVisibility(
-                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-                );
+        // Hide status bar completely, showing it temporarily only if user swipes down
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false);
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                controller.hide(WindowInsets.Type.statusBars());
+                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
             }
+        } else {
+            window.getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            );
         }
     }
 
@@ -447,6 +483,51 @@ public class MainActivity extends AppCompatActivity {
                     break;
             }
         });
+    }
+
+    private void initGoogleSignIn(String clientId) {
+        GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestIdToken(clientId)
+                .requestEmail()
+                .build();
+        mGoogleSignInClient = GoogleSignIn.getClient(this, gso);
+    }
+
+    private void checkAndExtractClientId(String url) {
+        if (url == null) return;
+        if (url.contains("client_id=") && url.contains("apps.googleusercontent.com")) {
+            try {
+                Uri uri = Uri.parse(url);
+                String clientId = uri.getQueryParameter("client_id");
+                if (clientId != null && !clientId.isEmpty()) {
+                    SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
+                    String savedClientId = prefs.getString("google_client_id", null);
+                    if (savedClientId == null || !savedClientId.equals(clientId)) {
+                        prefs.edit().putString("google_client_id", clientId).apply();
+                        initGoogleSignIn(clientId);
+
+                        // Cold start capture successful! Cancel popup dialog and trigger the native accounts chooser immediately
+                        runOnUiThread(() -> {
+                            if (popupDialog != null && popupDialog.isShowing()) {
+                                popupDialog.dismiss();
+                                popupDialog = null;
+                            }
+                            if (popupWebView != null) {
+                                popupWebView.destroy();
+                                popupWebView = null;
+                            }
+                            resetLoginButtons();
+                            mGoogleSignInClient.signOut().addOnCompleteListener(task -> {
+                                Intent signInIntent = mGoogleSignInClient.getSignInIntent();
+                                startActivityForResult(signInIntent, RC_SIGN_IN);
+                            });
+                        });
+                    }
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -612,17 +693,21 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
 
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                checkAndExtractClientId(url);
+            }
+
             @SuppressWarnings("deprecation")
             @Override
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
-                // Show offline screen on standard errors
                 showOfflineScreen();
             }
 
             @TargetApi(Build.VERSION_CODES.M)
             @Override
             public void onReceivedError(WebView view, android.webkit.WebResourceRequest request, android.webkit.WebResourceError error) {
-                // Check if this error is for the main page
                 if (request.isForMainFrame()) {
                     showOfflineScreen();
                 }
@@ -631,6 +716,7 @@ public class MainActivity extends AppCompatActivity {
             @SuppressWarnings("deprecation")
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                checkAndExtractClientId(url);
                 if (url.startsWith("http://") || url.startsWith("https://")) {
                     return false; // Load in WebView
                 }
@@ -639,7 +725,7 @@ public class MainActivity extends AppCompatActivity {
                     view.getContext().startActivity(intent);
                     return true;
                 } catch (Exception e) {
-                    return true; // Handle missing apps gracefully
+                    return true;
                 }
             }
 
@@ -647,6 +733,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request) {
                 String url = request.getUrl().toString();
+                checkAndExtractClientId(url);
                 if (url.startsWith("http://") || url.startsWith("https://")) {
                     return false; // Load in WebView
                 }
@@ -655,14 +742,13 @@ public class MainActivity extends AppCompatActivity {
                     view.getContext().startActivity(intent);
                     return true;
                 } catch (Exception e) {
-                    return true; // Handle missing apps gracefully
+                    return true;
                 }
             }
         });
 
         // Custom WebChromeClient to handle camera permissions, file uploads, and window popups
         webView.setWebChromeClient(new WebChromeClient() {
-            // Support camera / microphone permissions dynamically in WebView
             @Override
             public void onPermissionRequest(final PermissionRequest request) {
                 MainActivity.this.runOnUiThread(() -> {
@@ -672,11 +758,9 @@ public class MainActivity extends AppCompatActivity {
                 });
             }
 
-            // Support popup windows (e.g. Firebase/Google sign-in popup flow) by creating a dynamic popup WebView
             @SuppressLint("SetJavaScriptEnabled")
             @Override
             public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, android.os.Message resultMsg) {
-                // If there's an existing popup webview/dialog, clean it up first
                 if (popupDialog != null && popupDialog.isShowing()) {
                     popupDialog.dismiss();
                     popupDialog = null;
@@ -692,7 +776,6 @@ public class MainActivity extends AppCompatActivity {
                         FrameLayout.LayoutParams.MATCH_PARENT
                 ));
 
-                // Enable hardware acceleration for popup WebView
                 popupWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
                 WebSettings popupSettings = popupWebView.getSettings();
@@ -706,13 +789,11 @@ public class MainActivity extends AppCompatActivity {
                 popupSettings.setSupportMultipleWindows(true);
                 popupSettings.setJavaScriptCanOpenWindowsAutomatically(true);
 
-                // Ensure third-party cookies are accepted for OAuth popup
                 android.webkit.CookieManager cookieManager = android.webkit.CookieManager.getInstance();
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     cookieManager.setAcceptThirdPartyCookies(popupWebView, true);
                 }
 
-                // Clean the popup WebView user agent with robust regex
                 String originalUA = popupSettings.getUserAgentString();
                 if (originalUA != null) {
                     String cleanUA = originalUA.replace("; wv", "");
@@ -723,31 +804,37 @@ public class MainActivity extends AppCompatActivity {
 
                 popupWebView.setWebViewClient(new WebViewClient() {
                     @Override
+                    public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                        super.onPageStarted(view, url, favicon);
+                        checkAndExtractClientId(url);
+                    }
+
+                    @Override
                     public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                        return false; // let the popup WebView load it
+                        checkAndExtractClientId(url);
+                        return false;
                     }
 
                     @TargetApi(Build.VERSION_CODES.N)
                     @Override
                     public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request) {
+                        checkAndExtractClientId(request.getUrl().toString());
                         return false;
                     }
                 });
 
-                // Host popupWebView inside a native full-screen Dialog
                 popupDialog = new Dialog(MainActivity.this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
                 popupDialog.setContentView(popupWebView);
                 popupDialog.setCancelable(true);
 
-                // If user cancels the dialog (e.g. by pressing back button), handle cleanup
                 popupDialog.setOnCancelListener(dialog -> {
                     if (popupWebView != null) {
                         popupWebView.destroy();
                         popupWebView = null;
                     }
                     popupDialog = null;
-                    SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-                    boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
+                    SharedPreferences prefs1 = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
+                    boolean isLoggedIn = prefs1.getBoolean("is_logged_in", false);
                     if (!isLoggedIn) {
                         showNativeLoginScreen();
                         resetLoginButtons();
@@ -766,9 +853,8 @@ public class MainActivity extends AppCompatActivity {
                             popupWebView.destroy();
                             popupWebView = null;
                         }
-                        // Check if still not logged in, if so recover Native Login UI layout rather than blank screen
-                        SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-                        boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
+                        SharedPreferences prefs1 = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
+                        boolean isLoggedIn = prefs1.getBoolean("is_logged_in", false);
                         if (!isLoggedIn) {
                             showNativeLoginScreen();
                             resetLoginButtons();
@@ -784,7 +870,6 @@ public class MainActivity extends AppCompatActivity {
                 return true;
             }
 
-            // File Chooser for <input type="file" />
             @Override
             public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
                 if (MainActivity.this.filePathCallback != null) {
@@ -849,7 +934,30 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode == FILE_CHOOSER_REQUEST_CODE) {
+        if (requestCode == RC_SIGN_IN) {
+            // Re-enable interactive elements
+            resetLoginButtons();
+
+            Task<GoogleSignInAccount> task = GoogleSignIn.getSignedInAccountFromIntent(data);
+            try {
+                GoogleSignInAccount account = task.getResult(ApiException.class);
+                String idToken = account.getIdToken();
+                if (idToken != null) {
+                    // Send Google security ID Token to the WebView
+                    JSONObject jsonPayload = new JSONObject();
+                    jsonPayload.put("type", "googleLogin");
+                    jsonPayload.put("idToken", idToken);
+
+                    String js = "window.postMessage(" + jsonPayload.toString() + ", '*');";
+                    webView.evaluateJavascript(js, null);
+                } else {
+                    Toast.makeText(this, "Failed to retrieve Google token.", Toast.LENGTH_SHORT).show();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                Toast.makeText(this, "Google Sign-In failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        } else if (requestCode == FILE_CHOOSER_REQUEST_CODE) {
             if (filePathCallback == null) {
                 super.onActivityResult(requestCode, resultCode, data);
                 return;
@@ -857,10 +965,8 @@ public class MainActivity extends AppCompatActivity {
 
             Uri[] results = null;
 
-            // Check if response is positive and contains values
             if (resultCode == RESULT_OK) {
                 if (data == null || data.getData() == null) {
-                    // Capture path contains image from camera
                     if (cameraPhotoPath != null) {
                         results = new Uri[]{Uri.parse(cameraPhotoPath)};
                     }
@@ -890,9 +996,8 @@ public class MainActivity extends AppCompatActivity {
                         popupWebView.destroy();
                         popupWebView = null;
                     }
-                    // Recover native login UI layout if they cancel out of popup
-                    SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-                    boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
+                    SharedPreferences prefs1 = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
+                    boolean isLoggedIn = prefs1.getBoolean("is_logged_in", false);
                     if (!isLoggedIn) {
                         showNativeLoginScreen();
                         resetLoginButtons();
@@ -907,7 +1012,6 @@ public class MainActivity extends AppCompatActivity {
                 } else if (webView.canGoBack()) {
                     webView.goBack();
                 } else {
-                    // Exit the app gracefully
                     finish();
                 }
             }
@@ -975,6 +1079,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        configureFullScreen();
         if (videoView != null && nativeLoginScreen.getVisibility() == View.VISIBLE) {
             videoView.start();
         }
@@ -1029,7 +1134,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void hideOfflineScreen() {
         offlineScreen.setVisibility(View.GONE);
-        // Do not immediately make webview visible if splash screen is running
         if (splashScreen.getVisibility() != View.VISIBLE) {
             SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
             boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
@@ -1080,7 +1184,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void showNativeLoginScreen() {
         runOnUiThread(() -> {
-            webView.setVisibility(View.INVISIBLE); // Keep WebView completely hidden/bypassed so they never see it
+            webView.setVisibility(View.INVISIBLE);
             nativeLoginScreen.setVisibility(View.VISIBLE);
             if (videoView != null) {
                 videoView.start();
@@ -1091,7 +1195,7 @@ public class MainActivity extends AppCompatActivity {
     private void hideNativeLoginScreen() {
         runOnUiThread(() -> {
             nativeLoginScreen.setVisibility(View.GONE);
-            webView.setVisibility(View.VISIBLE); // Switch fully to the authenticated web layout
+            webView.setVisibility(View.VISIBLE);
             if (videoView != null) {
                 videoView.pause();
             }
@@ -1128,7 +1232,6 @@ public class MainActivity extends AppCompatActivity {
         if (requestCode == PERMISSION_REQUEST_CODE) {
             for (int i = 0; i < permissions.length; i++) {
                 if (grantResults[i] == PackageManager.PERMISSION_DENIED) {
-                    // Standard notification or warning, but allow application to function
                     Toast.makeText(this, "Permission " + permissions[i] + " denied. Some features might not work properly.", Toast.LENGTH_SHORT).show();
                 }
             }
