@@ -67,7 +67,7 @@ import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String TARGET_URL = "https://yaraan.online";
+    private static final String TARGET_URL = "https://yaraan-voice-chat.netlify.app/";
     private static final int PERMISSION_REQUEST_CODE = 1001;
     private static final int FILE_CHOOSER_REQUEST_CODE = 1002;
     private static final int GOOGLE_SIGN_IN_REQUEST_CODE = 1003;
