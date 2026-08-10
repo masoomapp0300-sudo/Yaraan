@@ -342,9 +342,13 @@ public class MainActivity extends AppCompatActivity {
                 "if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }", null);
 
             SharedPreferences prefs1 = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-            String clientId = prefs1.getString("google_client_id", null);
+            String clientId = prefs1.getString("google_client_id", "740464208491-r63hohlm9o2lvc40f8gffitrbe6pceq8.apps.googleusercontent.com");
 
-            if (clientId != null && mGoogleSignInClient != null) {
+            if (mGoogleSignInClient == null) {
+                initGoogleSignIn(clientId);
+            }
+
+            if (mGoogleSignInClient != null) {
                 // Trigger modern Google accounts chooser bottom sheet
                 btnNativeGoogle.setEnabled(false);
                 btnNativeLogin.setEnabled(false);
@@ -353,20 +357,7 @@ public class MainActivity extends AppCompatActivity {
                     startActivityForResult(signInIntent, RC_SIGN_IN);
                 });
             } else {
-                // Cold-start fallback: Let main WebView load Google login programmatically to capture Google's client ID first
-                btnNativeGoogle.setEnabled(false);
-                btnNativeLogin.setEnabled(false);
-
-                // Set 15-second safety timeout
-                timeoutHandler.removeCallbacks(timeoutRunnable);
-                timeoutHandler.postDelayed(timeoutRunnable, 15000);
-
-                // Dynamically override userAgent so auth_system.js treats the client as a standard Chrome mobile browser
-                String jsOverrideUA = "Object.defineProperty(navigator, 'userAgent', { get: function () { return 'Mozilla/5.0 (Linux; Android 13; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36'; } });";
-                webView.evaluateJavascript(jsOverrideUA, null);
-
-                // Trigger web's standard Google Login
-                webView.evaluateJavascript("if (window.handleGoogleLoginTrigger) { window.handleGoogleLoginTrigger(); }", null);
+                Toast.makeText(this, "Google Sign-In is initializing. Please try again in a moment.", Toast.LENGTH_SHORT).show();
             }
         });
 
