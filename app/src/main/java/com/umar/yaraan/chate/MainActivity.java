@@ -73,7 +73,7 @@ import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String TARGET_URL = "https://yaraan-voice-chat.netlify.app";
+    private static final String TARGET_URL = "https://yaraan.online";
     private static final int PERMISSION_REQUEST_CODE = 1001;
     private static final int FILE_CHOOSER_REQUEST_CODE = 1002;
     private static final int RC_SIGN_IN = 1003;
@@ -352,10 +352,7 @@ public class MainActivity extends AppCompatActivity {
                 // Trigger modern Google accounts chooser bottom sheet
                 btnNativeGoogle.setEnabled(false);
                 btnNativeLogin.setEnabled(false);
-                mGoogleSignInClient.signOut().addOnCompleteListener(task -> {
-                    Intent signInIntent = mGoogleSignInClient.getSignInIntent();
-                    startActivityForResult(signInIntent, RC_SIGN_IN);
-                });
+                launchGoogleSignInIntent();
             } else {
                 Toast.makeText(this, "Google Sign-In is initializing. Please try again in a moment.", Toast.LENGTH_SHORT).show();
             }
@@ -482,6 +479,35 @@ public class MainActivity extends AppCompatActivity {
         mGoogleSignInClient = GoogleSignIn.getClient(this, gso);
     }
 
+    private void launchGoogleSignInIntent() {
+        if (mGoogleSignInClient == null) {
+            return;
+        }
+        final boolean[] launched = {false};
+        Runnable launchIntentRunnable = () -> {
+            if (!launched[0]) {
+                launched[0] = true;
+                try {
+                    Intent signInIntent = mGoogleSignInClient.getSignInIntent();
+                    startActivityForResult(signInIntent, RC_SIGN_IN);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    Toast.makeText(this, "Failed to start Google selector", Toast.LENGTH_SHORT).show();
+                    resetLoginButtons();
+                }
+            }
+        };
+
+        // Set a timeout of 1500ms to launch the intent anyway if signOut hangs
+        Handler handler = new Handler(Looper.getMainLooper());
+        handler.postDelayed(launchIntentRunnable, 1500);
+
+        mGoogleSignInClient.signOut().addOnCompleteListener(task -> {
+            handler.removeCallbacks(launchIntentRunnable);
+            runOnUiThread(launchIntentRunnable);
+        });
+    }
+
     private void checkAndExtractClientId(String url) {
         if (url == null) return;
         if (url.contains("client_id=") && url.contains("apps.googleusercontent.com")) {
@@ -506,10 +532,7 @@ public class MainActivity extends AppCompatActivity {
                                 popupWebView = null;
                             }
                             resetLoginButtons();
-                            mGoogleSignInClient.signOut().addOnCompleteListener(task -> {
-                                Intent signInIntent = mGoogleSignInClient.getSignInIntent();
-                                startActivityForResult(signInIntent, RC_SIGN_IN);
-                            });
+                            launchGoogleSignInIntent();
                         });
                     }
                 }
@@ -947,6 +970,20 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     Toast.makeText(this, "Failed to retrieve Google token.", Toast.LENGTH_SHORT).show();
                 }
+            } catch (ApiException e) {
+                e.printStackTrace();
+                int statusCode = e.getStatusCode();
+                String message;
+                if (statusCode == 7) { // CommonStatusCodes.NETWORK_ERROR
+                    message = "Network error. Please check your internet connection and try again.";
+                } else if (statusCode == 12501) { // CommonStatusCodes.CANCELED
+                    message = "Sign-In cancelled.";
+                } else if (statusCode == 12502) {
+                    message = "Sign-In in progress. Please wait.";
+                } else {
+                    message = "Google Sign-In failed (code " + statusCode + "). Please try again.";
+                }
+                Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
             } catch (Exception e) {
                 e.printStackTrace();
                 Toast.makeText(this, "Google Sign-In failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
