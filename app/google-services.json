@@ -23,6 +23,14 @@
           }
         },
         {
+          "client_id": "740464208491-cots22jlgr55nnha5o8f6pg8i8hft2bq.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.umar.yaraan.chate",
+            "certificate_hash": "91afb3ad9db50b810a534b30db29d8fd9b250dad"
+          }
+        },
+        {
           "client_id": "740464208491-r63hohlm9o2lvc40f8gffitrbe6pceq8.apps.googleusercontent.com",
           "client_type": 3
         }
