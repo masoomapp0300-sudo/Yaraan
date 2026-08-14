@@ -3,10 +3,10 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/white"
+    android:background="@color/black"
     android:fitsSystemWindows="false">
 
-    <!-- 1. WebView Container with top padding slot (Always true edge-to-edge fullscreen) -->
+    <!-- 1. WebView Container -->
     <FrameLayout
         android:id="@+id/webview_container"
         android:layout_width="match_parent"
@@ -77,7 +77,288 @@
             app:cornerRadius="8dp" />
     </LinearLayout>
 
-    <!-- 3. Splash Screen Overlay -->
+    <!-- 3. Native Login Screen Container -->
+    <RelativeLayout
+        android:id="@+id/login_screen_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+
+        <!-- Background Video View -->
+        <VideoView
+            android:id="@+id/video_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_alignParentStart="true"
+            android:layout_alignParentEnd="true"
+            android:layout_alignParentTop="true"
+            android:layout_alignParentBottom="true" />
+
+        <!-- Semi-transparent Dark Filter Layer to ensure legibility -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#99000000" />
+
+        <!-- Scrollable Login UI Content -->
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:paddingStart="32dp"
+                android:paddingEnd="32dp"
+                android:paddingTop="70dp"
+                android:paddingBottom="48dp">
+
+                <!-- App Icon -->
+                <ImageView
+                    android:id="@+id/login_app_icon"
+                    android:layout_width="110dp"
+                    android:layout_height="110dp"
+                    android:src="@drawable/app_icon"
+                    android:contentDescription="Yaraan App Icon"
+                    android:scaleType="fitCenter" />
+
+                <!-- App Title -->
+                <TextView
+                    android:id="@+id/login_app_title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="YARAAN"
+                    android:textColor="@color/white"
+                    android:textSize="36sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.1"
+                    android:layout_marginTop="12dp"
+                    android:fontFamily="sans-serif-medium" />
+
+                <!-- Spacer Line -->
+                <View
+                    android:layout_width="60dp"
+                    android:layout_height="2dp"
+                    android:background="#80FFFFFF"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="40dp" />
+
+                <!-- Google Sign-In Button (Beautifully styled) -->
+                <LinearLayout
+                    android:id="@+id/btn_google_signin"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:background="@drawable/bg_google_btn"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:layout_marginBottom="24dp"
+                    android:foreground="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_google"
+                        android:layout_marginEnd="12dp"
+                        android:contentDescription="Google G" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Continue with Google"
+                        android:textColor="#333333"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <!-- Circular Email Toggle Button -->
+                <ImageButton
+                    android:id="@+id/btn_email_toggle"
+                    android:layout_width="60dp"
+                    android:layout_height="60dp"
+                    android:background="@drawable/bg_circle_btn"
+                    android:src="@drawable/ic_mail"
+                    android:tint="@color/white"
+                    android:scaleType="centerInside"
+                    android:layout_marginBottom="24dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:contentDescription="Email Sign In" />
+
+                <!-- Credentials Card (Glassmorphic form, hidden by default) -->
+                <LinearLayout
+                    android:id="@+id/credentials_card"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_glass_form"
+                    android:orientation="vertical"
+                    android:padding="24dp"
+                    android:visibility="gone"
+                    android:layout_marginBottom="24dp">
+
+                    <TextView
+                        android:id="@+id/tv_form_title"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="LOG IN"
+                        android:textColor="@color/white"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:layout_gravity="center"
+                        android:layout_marginBottom="16dp"
+                        android:letterSpacing="0.05" />
+
+                    <!-- Name Field (Only shown in Sign Up mode) -->
+                    <EditText
+                        android:id="@+id/et_name"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:background="@drawable/bg_edit_text"
+                        android:hint="Full Name"
+                        android:textColorHint="#99FFFFFF"
+                        android:textColor="@color/white"
+                        android:paddingStart="16dp"
+                        android:paddingEnd="16dp"
+                        android:inputType="textPersonName"
+                        android:maxLines="1"
+                        android:textSize="15sp"
+                        android:layout_marginBottom="16dp"
+                        android:visibility="gone" />
+
+                    <!-- Email Field -->
+                    <EditText
+                        android:id="@+id/et_email"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:background="@drawable/bg_edit_text"
+                        android:hint="Email Address"
+                        android:textColorHint="#99FFFFFF"
+                        android:textColor="@color/white"
+                        android:paddingStart="16dp"
+                        android:paddingEnd="16dp"
+                        android:inputType="textEmailAddress"
+                        android:maxLines="1"
+                        android:textSize="15sp"
+                        android:layout_marginBottom="16dp" />
+
+                    <!-- Password Field -->
+                    <EditText
+                        android:id="@+id/et_password"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:background="@drawable/bg_edit_text"
+                        android:hint="Password"
+                        android:textColorHint="#99FFFFFF"
+                        android:textColor="@color/white"
+                        android:paddingStart="16dp"
+                        android:paddingEnd="16dp"
+                        android:inputType="textPassword"
+                        android:maxLines="1"
+                        android:textSize="15sp"
+                        android:layout_marginBottom="12dp" />
+
+                    <!-- Forgot Password Link -->
+                    <TextView
+                        android:id="@+id/btn_forgot_password"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Forgot Password?"
+                        android:textColor="#CCFFFFFF"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:layout_gravity="end"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:padding="8dp"
+                        android:layout_marginBottom="16dp" />
+
+                    <!-- Action Button -->
+                    <Button
+                        android:id="@+id/btn_native_login"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:background="@drawable/bg_button"
+                        app:backgroundTint="@null"
+                        android:text="Log In"
+                        android:textColor="@color/white"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        app:cornerRadius="12dp" />
+
+                    <!-- Footer toggle link -->
+                    <LinearLayout
+                        android:id="@+id/toggle_footer_container"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_gravity="center_horizontal"
+                        android:layout_marginTop="20dp">
+
+                        <TextView
+                            android:id="@+id/tv_toggle_info"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Don't have an account? "
+                            android:textColor="#B3FFFFFF"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/btn_toggle_signup"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Create Account"
+                            android:textColor="@color/white"
+                            android:textStyle="bold"
+                            android:textSize="13sp"
+                            android:clickable="true"
+                            android:focusable="true" />
+                    </LinearLayout>
+
+                </LinearLayout>
+
+            </LinearLayout>
+        </ScrollView>
+    </RelativeLayout>
+
+    <!-- 4. Glassmorphism Loading Overlay -->
+    <RelativeLayout
+        android:id="@+id/glass_loading_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#66000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <androidx.cardview.widget.CardView
+            android:id="@+id/glass_loading_card"
+            android:layout_width="140dp"
+            android:layout_height="140dp"
+            android:layout_centerInParent="true"
+            app:cardCornerRadius="20dp"
+            app:cardBackgroundColor="#26FFFFFF"
+            app:cardElevation="0dp">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_glass_card_stroke">
+
+                <ProgressBar
+                    android:layout_width="50dp"
+                    android:layout_height="50dp"
+                    android:layout_gravity="center"
+                    android:indeterminateTint="@color/white" />
+            </FrameLayout>
+        </androidx.cardview.widget.CardView>
+    </RelativeLayout>
+
+    <!-- 5. Splash Screen Overlay -->
     <RelativeLayout
         android:id="@+id/splash_screen"
         android:layout_width="match_parent"
@@ -113,324 +394,6 @@
                 android:letterSpacing="0.05"
                 android:fontFamily="sans-serif-medium" />
         </LinearLayout>
-    </RelativeLayout>
-
-    <!-- 4. Native Login Screen Parent Container -->
-    <RelativeLayout
-        android:id="@+id/native_login_screen"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="@android:color/transparent"
-        android:visibility="gone"
-        android:clickable="true"
-        android:focusable="true">
-
-        <!-- Background VideoView playing bg_login.mp4 edge-to-edge -->
-        <VideoView
-            android:id="@+id/video_view"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:layout_alignParentStart="true"
-            android:layout_alignParentEnd="true"
-            android:layout_alignParentTop="true"
-            android:layout_alignParentBottom="true" />
-
-        <!-- Semi-transparent overlay to ensure contrast and readability -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="#4D000000" />
-
-        <!-- SECTION A: Initial Native Login Screen (Pill buttons for Google and Email) -->
-        <RelativeLayout
-            android:id="@+id/section_initial_login"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:visibility="visible">
-
-            <!-- 1. Top Section: Logo and App Name shifted to the very top section -->
-            <LinearLayout
-                android:id="@+id/top_logo_container"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center_horizontal"
-                android:layout_alignParentTop="true"
-                android:layout_marginTop="40dp"
-                android:paddingStart="32dp"
-                android:paddingEnd="32dp">
-
-                <!-- Logo -->
-                <ImageView
-                    android:id="@+id/login_logo"
-                    android:layout_width="100dp"
-                    android:layout_height="100dp"
-                    android:src="@drawable/app_icon"
-                    android:contentDescription="@string/app_name" />
-
-                <!-- Title -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="★ 𝐘𝐚𝐫𝐚𝐚𝐧 ★"
-                    android:textColor="#FFFFFF"
-                    android:textSize="32sp"
-                    android:textStyle="bold"
-                    android:layout_marginTop="12dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="VOICE CHAT &amp; PARTY"
-                    android:textColor="#9CA3AF"
-                    android:textSize="12sp"
-                    android:letterSpacing="0.1"
-                    android:layout_marginTop="2dp" />
-            </LinearLayout>
-
-            <!-- 3. Bottom Section: Privacy Policy shifted to the very bottom of the screen -->
-            <LinearLayout
-                android:id="@+id/bottom_privacy_container"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center"
-                android:layout_alignParentBottom="true"
-                android:layout_marginBottom="24dp"
-                android:paddingStart="24dp"
-                android:paddingEnd="24dp">
-
-                <CheckBox
-                    android:id="@+id/cb_privacy_policy"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:buttonTint="#FFFFFF"
-                    android:checked="false" />
-
-                <TextView
-                    android:id="@+id/tv_privacy_policy"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="I agree to the Privacy Policy"
-                    android:textColor="#FFFFFF"
-                    android:textSize="13sp"
-                    android:textStyle="bold"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:layout_marginStart="4dp" />
-            </LinearLayout>
-
-            <!-- 2. Mid-Low Section: Sign-in buttons positioned lower down, leaving center video area highly visible -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center_horizontal|bottom"
-                android:layout_above="@id/bottom_privacy_container"
-                android:layout_below="@id/top_logo_container"
-                android:layout_marginBottom="24dp"
-                android:paddingStart="40dp"
-                android:paddingEnd="40dp">
-
-                <!-- Empty space weight to push buttons down to lower area -->
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1" />
-
-                <!-- Google Sign-In Button (Fully rounded pill shaped / smooth curves) -->
-                <LinearLayout
-                    android:id="@+id/btn_native_google"
-                    android:layout_width="match_parent"
-                    android:layout_height="54dp"
-                    android:background="@drawable/bg_google_btn"
-                    android:gravity="center"
-                    android:orientation="horizontal"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:paddingStart="24dp"
-                    android:paddingEnd="24dp"
-                    android:elevation="4dp">
-
-                    <ImageView
-                        android:layout_width="22dp"
-                        android:layout_height="22dp"
-                        android:src="@drawable/ic_google"
-                        android:contentDescription="Google" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Sign in with Google"
-                        android:textColor="#333333"
-                        android:textSize="15sp"
-                        android:textStyle="bold"
-                        android:layout_marginStart="12dp" />
-                </LinearLayout>
-
-                <!-- Clean, minimalist white Email Icon ONLY positioned neatly below the Google button -->
-                <ImageView
-                    android:id="@+id/btn_open_email_screen"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:src="@drawable/ic_email"
-                    android:scaleType="fitCenter"
-                    android:padding="10dp"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:layout_marginTop="16dp"
-                    android:contentDescription="Email Sign-In" />
-            </LinearLayout>
-
-        </RelativeLayout>
-
-        <!-- SECTION B: Dedicated Full-Screen Email/Password Entry (with Login / Register / Forgot Password modes) -->
-        <RelativeLayout
-            android:id="@+id/section_email_login"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:visibility="gone">
-
-            <!-- Back Arrow Button to return to initial native screen -->
-            <ImageView
-                android:id="@+id/btn_back_to_initial"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:src="@drawable/ic_back"
-                android:padding="12dp"
-                android:layout_marginTop="48dp"
-                android:layout_marginStart="16dp"
-                android:clickable="true"
-                android:focusable="true"
-                android:contentDescription="Back" />
-
-            <ScrollView
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:layout_below="@id/btn_back_to_initial"
-                android:fillViewport="true"
-                android:fitsSystemWindows="true">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="32dp"
-                    android:gravity="center_horizontal">
-
-                    <!-- Title of the screen/form -->
-                    <TextView
-                        android:id="@+id/tv_form_title"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Sign In"
-                        android:textColor="#FFFFFF"
-                        android:textSize="28sp"
-                        android:textStyle="bold"
-                        android:layout_marginTop="24dp" />
-
-                    <!-- Form Box -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:background="#221A44"
-                        android:padding="24dp"
-                        android:layout_marginTop="32dp"
-                        android:elevation="4dp">
-
-                        <!-- Name Input (Only shown in Register/Create Account mode) -->
-                        <EditText
-                            android:id="@+id/et_name"
-                            android:layout_width="match_parent"
-                            android:layout_height="52dp"
-                            android:background="#1E1738"
-                            android:hint="Full Name"
-                            android:textColorHint="#9CA3AF"
-                            android:textColor="#FFFFFF"
-                            android:paddingLeft="16dp"
-                            android:paddingRight="16dp"
-                            android:inputType="textPersonName"
-                            android:singleLine="true"
-                            android:layout_marginBottom="16dp"
-                            android:visibility="gone" />
-
-                        <!-- Email Input -->
-                        <EditText
-                            android:id="@+id/et_email"
-                            android:layout_width="match_parent"
-                            android:layout_height="52dp"
-                            android:background="#1E1738"
-                            android:hint="Email"
-                            android:textColorHint="#9CA3AF"
-                            android:textColor="#FFFFFF"
-                            android:paddingLeft="16dp"
-                            android:paddingRight="16dp"
-                            android:inputType="textEmailAddress"
-                            android:singleLine="true"
-                            android:layout_marginBottom="16dp" />
-
-                        <!-- Password Input -->
-                        <EditText
-                            android:id="@+id/et_password"
-                            android:layout_width="match_parent"
-                            android:layout_height="52dp"
-                            android:background="#1E1738"
-                            android:hint="Password"
-                            android:textColorHint="#9CA3AF"
-                            android:textColor="#FFFFFF"
-                            android:paddingLeft="16dp"
-                            android:paddingRight="16dp"
-                            android:inputType="textPassword"
-                            android:singleLine="true"
-                            android:layout_marginBottom="12dp" />
-
-                        <!-- Forgot Password Link -->
-                        <TextView
-                            android:id="@+id/tv_forgot_password"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Forgot Password?"
-                            android:textColor="#FF6200EE"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:layout_gravity="end"
-                            android:layout_marginBottom="24dp"
-                            android:clickable="true"
-                            android:focusable="true" />
-
-                        <!-- Native Submit/Action Button -->
-                        <Button
-                            android:id="@+id/btn_native_login"
-                            android:layout_width="match_parent"
-                            android:layout_height="52dp"
-                            android:text="Sign In"
-                            android:textColor="#FFFFFF"
-                            android:textStyle="bold"
-                            android:backgroundTint="#FF6200EE"
-                            android:layout_marginBottom="16dp" />
-
-                    </LinearLayout>
-
-                    <!-- Toggle Mode link -->
-                    <TextView
-                        android:id="@+id/tv_toggle_mode"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Don't have an account? Create one"
-                        android:textColor="#9CA3AF"
-                        android:textSize="15sp"
-                        android:textStyle="bold"
-                        android:layout_marginTop="24dp"
-                        android:clickable="true"
-                        android:focusable="true" />
-
-                </LinearLayout>
-
-            </ScrollView>
-
-        </RelativeLayout>
-
     </RelativeLayout>
 
 </RelativeLayout>

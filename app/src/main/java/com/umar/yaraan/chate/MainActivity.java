@@ -3,32 +3,22 @@ package com.umar.yaraan.chate;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
-import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
-import android.graphics.Paint;
 import android.net.ConnectivityManager;
-import android.widget.CheckBox;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
-import android.os.Handler;
-import android.os.Looper;
 import android.provider.MediaStore;
-import android.util.Log;
 import android.view.View;
 import android.view.Window;
-import android.view.WindowInsets;
-import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.view.animation.AlphaAnimation;
-import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -38,15 +28,20 @@ import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
+import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.VideoView;
 
 import androidx.activity.OnBackPressedCallback;
+import com.google.firebase.auth.UserProfileChangeRequest;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -58,13 +53,14 @@ import com.google.android.gms.auth.api.signin.GoogleSignInClient;
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
 import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.tasks.Task;
-
-import org.json.JSONObject;
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.auth.AuthCredential;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.auth.GoogleAuthProvider;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -73,51 +69,49 @@ import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String TARGET_URL = "https://yaraan-voice-chat.netlify.app";
+    private static final String TARGET_URL = "https://yaraan.online";
     private static final int PERMISSION_REQUEST_CODE = 1001;
     private static final int FILE_CHOOSER_REQUEST_CODE = 1002;
-    private static final int RC_SIGN_IN = 1003;
+    private static final int GOOGLE_SIGN_IN_REQUEST_CODE = 1003;
 
     private FrameLayout webViewContainer;
     private WebView webView;
-    private WebView popupWebView;
-    private Dialog popupDialog;
     private RelativeLayout splashScreen;
     private LinearLayout offlineScreen;
     private Button btnRetry;
 
-    // Native Login UI Container & Background Video
-    private RelativeLayout nativeLoginScreen;
+    // Native Login Elements
+    private RelativeLayout loginScreenContainer;
     private VideoView videoView;
-
-    // Email form section views
-    private RelativeLayout sectionInitialLogin;
-    private RelativeLayout sectionEmailLogin;
-    private EditText etName, etEmail, etPassword;
-    private TextView tvFormTitle, tvForgotPassword, tvToggleMode;
+    private EditText etEmail, etPassword;
     private Button btnNativeLogin;
-    private LinearLayout btnNativeGoogle;
-    private ImageView btnOpenEmailScreen;
-    private ImageView btnBackToInitial;
+    private TextView btnForgotPassword, btnToggleSignup, tvToggleInfo;
+    private LinearLayout btnGoogleSignin;
+    private RelativeLayout glassLoadingOverlay;
 
-    // Privacy Policy UI components
-    private CheckBox cbPrivacyPolicy;
-    private TextView tvPrivacyPolicy;
+    private ImageButton btnEmailToggle;
+    private LinearLayout credentialsCard;
+    private EditText etName;
+    private TextView tvFormTitle;
+
+    private enum FormMode {
+        LOGIN,
+        SIGN_UP,
+        FORGOT_PASSWORD
+    }
+    private FormMode currentFormMode = FormMode.LOGIN;
+
+    // Firebase & Auth Client variables
+    private FirebaseAuth mAuth;
+    private GoogleSignInClient mGoogleSignInClient;
+
+    // Tokens to inject
+    private String currentIdToken = null;
+    private long currentExpirationTime = 0;
 
     // File upload variables
     private ValueCallback<Uri[]> filePathCallback;
     private String cameraPhotoPath;
-
-    // Google Sign-In SDK
-    private GoogleSignInClient mGoogleSignInClient;
-
-    // Form states
-    private enum FormMode {
-        LOGIN,
-        REGISTER,
-        FORGOT_PASSWORD
-    }
-    private FormMode currentFormMode = FormMode.LOGIN;
 
     // Permissions to request at startup or dynamically
     private final String[] requiredPermissions = {
@@ -132,379 +126,340 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        setContentView(R.layout.activity_main);
+        // Initialize Firebase
+        FirebaseApp.initializeApp(this);
+        mAuth = FirebaseAuth.getInstance();
 
-        // 1. Configure Full-Screen Transparent Status Bar & Immersive Mode (Always call after setContentView for safe window attachments)
+        // Configure Google Sign-In Options (Using Web Client ID from google-services.json)
+        GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestIdToken("740464208491-r63hohlm9o2lvc40f8gffitrbe6pceq8.apps.googleusercontent.com")
+                .requestEmail()
+                .build();
+        mGoogleSignInClient = GoogleSignIn.getClient(this, gso);
+
+        // 1. Configure Full-Screen Transparent Status Bar
         configureFullScreen();
+
+        setContentView(R.layout.activity_main);
 
         // Initialize UI components
         webViewContainer = findViewById(R.id.webview_container);
         webView = findViewById(R.id.webview);
 
-        // WebView matches full edge-to-edge screens seamlessly with zero padding
-        webViewContainer.setPadding(0, 0, 0, 0);
+        // Apply dynamic status bar top padding to the WebView container
+        ViewCompat.setOnApplyWindowInsetsListener(webViewContainer, (v, insets) -> {
+            int statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top;
+            v.setPadding(0, statusBarHeight, 0, 0);
+            return insets;
+        });
 
         splashScreen = findViewById(R.id.splash_screen);
         offlineScreen = findViewById(R.id.offline_screen);
         btnRetry = findViewById(R.id.btn_retry);
 
-        // Initialize Native Login Views
-        nativeLoginScreen = findViewById(R.id.native_login_screen);
+        // Initialize Login UI Components
+        loginScreenContainer = findViewById(R.id.login_screen_container);
         videoView = findViewById(R.id.video_view);
-
-        sectionInitialLogin = findViewById(R.id.section_initial_login);
-        sectionEmailLogin = findViewById(R.id.section_email_login);
-
-        btnNativeGoogle = findViewById(R.id.btn_native_google);
-        btnOpenEmailScreen = findViewById(R.id.btn_open_email_screen);
-        btnBackToInitial = findViewById(R.id.btn_back_to_initial);
-
-        etName = findViewById(R.id.et_name);
         etEmail = findViewById(R.id.et_email);
         etPassword = findViewById(R.id.et_password);
-        tvFormTitle = findViewById(R.id.tv_form_title);
-        tvForgotPassword = findViewById(R.id.tv_forgot_password);
-        tvToggleMode = findViewById(R.id.tv_toggle_mode);
         btnNativeLogin = findViewById(R.id.btn_native_login);
+        btnForgotPassword = findViewById(R.id.btn_forgot_password);
+        btnToggleSignup = findViewById(R.id.btn_toggle_signup);
+        tvToggleInfo = findViewById(R.id.tv_toggle_info);
+        btnGoogleSignin = findViewById(R.id.btn_google_signin);
+        glassLoadingOverlay = findViewById(R.id.glass_loading_overlay);
 
-        cbPrivacyPolicy = findViewById(R.id.cb_privacy_policy);
-        tvPrivacyPolicy = findViewById(R.id.tv_privacy_policy);
+        btnEmailToggle = findViewById(R.id.btn_email_toggle);
+        credentialsCard = findViewById(R.id.credentials_card);
+        etName = findViewById(R.id.et_name);
+        tvFormTitle = findViewById(R.id.tv_form_title);
 
-        if (tvPrivacyPolicy != null) {
-            tvPrivacyPolicy.setPaintFlags(tvPrivacyPolicy.getPaintFlags() | Paint.UNDERLINE_TEXT_FLAG);
-            tvPrivacyPolicy.setOnClickListener(v -> {
-                try {
-                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://docs.google.com/document/d/1Mq4m80_848fEtMh4t3S1CZaj4yQEczCQCbWVfC_TDmM/edit?usp=drivesdk"));
-                    startActivity(intent);
-                } catch (Exception e) {
-                    Toast.makeText(this, "Unable to open Privacy Policy", Toast.LENGTH_SHORT).show();
-                }
-            });
+        // Apply Realtime Glassmorphic Blur to Loading card on Android 12+ (API 31+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            View glassCard = findViewById(R.id.glass_loading_card);
+            if (glassCard != null) {
+                glassCard.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(12f, 12f, android.graphics.Shader.TileMode.CLAMP));
+            }
         }
-
-        // Start background video playback on native screen
-        setupBackgroundVideo();
 
         // 2. Setup WebView and Settings
         setupWebView();
 
-        // 3. Initialize Google Sign-In SDK with the strict Firebase Web Client ID
-        initGoogleSignIn("740464208491-r63hohlm9o2lvc40f8gffitrbe6pceq8.apps.googleusercontent.com");
-
-        // 4. Setup Back Button Callback
+        // 3. Setup Back Button Callback
         setupBackButton();
 
-        // 5. Retry connection click handler
-        btnRetry.setOnClickListener(v -> attemptLoadUrl());
+        // 4. Setup Click Listeners for Login UI
+        setupLoginListeners();
 
-        // Toggle visibility between initial screen and email form screen
-        btnOpenEmailScreen.setOnClickListener(v -> {
-            if (cbPrivacyPolicy != null && !cbPrivacyPolicy.isChecked()) {
-                Toast.makeText(this, "Please agree to the Privacy Policy to proceed.", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            sectionInitialLogin.setVisibility(View.GONE);
-            sectionEmailLogin.setVisibility(View.VISIBLE);
-            updateFormMode(FormMode.LOGIN);
-        });
-
-        btnBackToInitial.setOnClickListener(v -> {
-            sectionEmailLogin.setVisibility(View.GONE);
-            sectionInitialLogin.setVisibility(View.VISIBLE);
-        });
-
-        tvForgotPassword.setOnClickListener(v -> updateFormMode(FormMode.FORGOT_PASSWORD));
-
-        tvToggleMode.setOnClickListener(v -> {
-            if (currentFormMode == FormMode.LOGIN) {
-                updateFormMode(FormMode.REGISTER);
-            } else {
-                updateFormMode(FormMode.LOGIN);
-            }
-        });
-
-        // Setup native email action submit click listener
-        btnNativeLogin.setOnClickListener(v -> {
-            if (cbPrivacyPolicy != null && !cbPrivacyPolicy.isChecked()) {
-                Toast.makeText(this, "Please agree to the Privacy Policy to proceed.", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            if (!isNetworkConnected()) {
-                Toast.makeText(this, "No internet connection. Please check your network.", Toast.LENGTH_SHORT).show();
-                showOfflineScreen();
-                return;
-            }
-
-            String email = etEmail.getText().toString().trim();
-            String password = etPassword.getText().toString();
-            String name = etName.getText().toString().trim();
-
-            if (email.isEmpty() || !email.contains("@")) {
-                etEmail.setError("Please enter a valid email");
-                return;
-            }
-
-            if (currentFormMode != FormMode.FORGOT_PASSWORD && password.isEmpty()) {
-                etPassword.setError("Please enter a password");
-                return;
-            }
-
-            if (currentFormMode == FormMode.REGISTER && name.isEmpty()) {
-                etName.setError("Please enter your name");
-                return;
-            }
-
-            // Set UI to loading state
-            btnNativeLogin.setEnabled(false);
-            btnNativeLogin.setText("Processing...");
-            btnNativeGoogle.setEnabled(false);
-
-            // Set 10-second safety timeout to reset buttons if request hangs
-            timeoutHandler.removeCallbacks(timeoutRunnable);
-            timeoutHandler.postDelayed(timeoutRunnable, 10000);
-
-            // Programmatically auto-check privacy policy checkbox on the website to bypass block
-            webView.evaluateJavascript(
-                "var cb = document.getElementById('privacy-checkbox'); " +
-                "if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }", null);
-
-            if (currentFormMode == FormMode.LOGIN) {
-                // Perform web login via PostMessage API
-                try {
-                    JSONObject jsonPayload = new JSONObject();
-                    jsonPayload.put("type", "emailLogin");
-                    jsonPayload.put("email", email);
-                    jsonPayload.put("password", password);
-
-                    String js = "window.postMessage(" + jsonPayload.toString() + ", '*');";
-                    webView.evaluateJavascript(js, null);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    Toast.makeText(this, "Login initialization failed", Toast.LENGTH_SHORT).show();
-                    resetLoginButtons();
-                }
-            } else if (currentFormMode == FormMode.REGISTER) {
-                // Inject credentials, switch web auth to signup mode, and dispatch form submit natively
-                String escapedName = name.replace("\"", "\\\"");
-                String escapedEmail = email.replace("\"", "\\\"");
-                String escapedPassword = password.replace("\"", "\\\"");
-
-                String js = "(function() { " +
-                        "    var cb = document.getElementById('privacy-checkbox'); " +
-                        "    if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); } " +
-                        "    var uFieldContainer = document.getElementById('username-field'); " +
-                        "    if (uFieldContainer && uFieldContainer.classList.contains('hidden')) { " +
-                        "        window.toggleAuthMode(); " +
-                        "    } " +
-                        "    var userField = document.getElementById('username'); " +
-                        "    var emailField = document.getElementById('email'); " +
-                        "    var passField = document.getElementById('password'); " +
-                        "    if (userField) userField.value = \"" + escapedName + "\"; " +
-                        "    if (emailField) emailField.value = \"" + escapedEmail + "\"; " +
-                        "    if (passField) passField.value = \"" + escapedPassword + "\"; " +
-                        "    var form = document.getElementById('auth-form'); " +
-                        "    if (form) { " +
-                        "        form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); " +
-                        "    } " +
-                        "})();";
-                webView.evaluateJavascript(js, null);
-            } else if (currentFormMode == FormMode.FORGOT_PASSWORD) {
-                // Fill web forgot password input and trigger otp reset natively
-                String escapedEmail = email.replace("\"", "\\\"");
-                String js = "(function() { " +
-                        "    var fpField = document.getElementById('fp-email-input'); " +
-                        "    if (fpField) fpField.value = \"" + escapedEmail + "\"; " +
-                        "    if (window.sendForgotPasswordOTP) { window.sendForgotPasswordOTP(); } " +
-                        "})();";
-                webView.evaluateJavascript(js, null);
-                // Since reset is done in sweetalert and won't trigger auth state changes, release UI loading state immediately
-                resetLoginButtons();
-            }
-        });
-
-        // Native Google sign-in trigger
-        btnNativeGoogle.setOnClickListener(v -> {
-            if (cbPrivacyPolicy != null && !cbPrivacyPolicy.isChecked()) {
-                Toast.makeText(this, "Please agree to the Privacy Policy to proceed.", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            if (!isNetworkConnected()) {
-                Toast.makeText(this, "No internet connection. Please check your network.", Toast.LENGTH_SHORT).show();
-                showOfflineScreen();
-                return;
-            }
-
-            // Programmatically auto-check privacy policy checkbox on the website to bypass block
-            webView.evaluateJavascript(
-                "var cb = document.getElementById('privacy-checkbox'); " +
-                "if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }", null);
-
-            if (mGoogleSignInClient == null) {
-                initGoogleSignIn("740464208491-r63hohlm9o2lvc40f8gffitrbe6pceq8.apps.googleusercontent.com");
-            }
-
-            if (mGoogleSignInClient != null) {
-                // Trigger modern Google accounts chooser bottom sheet
-                btnNativeGoogle.setEnabled(false);
-                btnNativeLogin.setEnabled(false);
-                launchGoogleSignInIntent();
-            } else {
-                Toast.makeText(this, "Google Sign-In is initializing. Please try again in a moment.", Toast.LENGTH_SHORT).show();
-            }
-        });
-
-        // 6. Request necessary runtime permissions
+        // 5. Request necessary runtime permissions
         checkAndRequestPermissions();
 
         // Register dynamic network callback for auto-reconnect
         registerNetworkCallback();
 
-        // 7. Start loading TARGET_URL
-        attemptLoadUrl();
+        // 6. Check Auth and start flow
+        checkAuthAndStart();
     }
 
     private void configureFullScreen() {
-        Window window = getWindow();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            Window window = getWindow();
             window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
             window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-            window.setStatusBarColor(Color.TRANSPARENT);
-        }
-
-        // Hide status bar completely, showing it temporarily only if user swipes down
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.setDecorFitsSystemWindows(false);
-            WindowInsetsController controller = window.getInsetsController();
-            if (controller != null) {
-                controller.hide(WindowInsets.Type.statusBars());
-                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-            }
-        } else {
             window.getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
             );
+            window.setStatusBarColor(Color.TRANSPARENT);
+            setStatusBarLightIcons(false); // Light icons on transparent dark background by default
         }
     }
 
-    private void setupBackgroundVideo() {
-        try {
-            File videoFile = getAssetVideoFile();
-            if (videoFile.exists() && videoFile.length() > 0) {
-                videoView.setVideoPath(videoFile.getAbsolutePath());
-                videoView.setOnPreparedListener(mp -> {
-                    mp.setLooping(true);
-                    mp.setVolume(0f, 0f); // Play silently
-                    videoView.start();
-                });
-                videoView.setOnErrorListener((mp, what, extra) -> {
-                    videoView.setVisibility(View.GONE);
-                    return true;
-                });
-            } else {
-                videoView.setVisibility(View.GONE);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-            videoView.setVisibility(View.GONE);
+    private void setStatusBarLightIcons(boolean isLight) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Window window = getWindow();
+            WindowInsetsControllerCompat controller = new WindowInsetsControllerCompat(window, window.getDecorView());
+            controller.setAppearanceLightStatusBars(isLight);
         }
     }
 
-    private File getAssetVideoFile() {
-        File file = new File(getCacheDir(), "bg_login.mp4");
-        try (InputStream is = getAssets().open("bg_login.mp4");
-             FileOutputStream os = new FileOutputStream(file)) {
-            byte[] buffer = new byte[4096];
-            int read;
-            while ((read = is.read(buffer)) != -1) {
-                os.write(buffer, 0, read);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return file;
-    }
-
-    private void updateFormMode(FormMode mode) {
-        currentFormMode = mode;
-        runOnUiThread(() -> {
-            etName.setError(null);
-            etEmail.setError(null);
-            etPassword.setError(null);
-
-            switch (mode) {
-                case LOGIN:
-                    tvFormTitle.setText("Sign In");
-                    etName.setVisibility(View.GONE);
-                    etEmail.setVisibility(View.VISIBLE);
-                    etPassword.setVisibility(View.VISIBLE);
-                    tvForgotPassword.setVisibility(View.VISIBLE);
-                    btnNativeLogin.setText("Sign In");
-                    tvToggleMode.setText("Don't have an account? Create one");
-                    break;
-                case REGISTER:
-                    tvFormTitle.setText("Create Account");
-                    etName.setVisibility(View.VISIBLE);
-                    etEmail.setVisibility(View.VISIBLE);
-                    etPassword.setVisibility(View.VISIBLE);
-                    tvForgotPassword.setVisibility(View.GONE);
-                    btnNativeLogin.setText("Create Account");
-                    tvToggleMode.setText("Already have an account? Sign In");
-                    break;
-                case FORGOT_PASSWORD:
-                    tvFormTitle.setText("Reset Password");
-                    etName.setVisibility(View.GONE);
-                    etEmail.setVisibility(View.VISIBLE);
-                    etPassword.setVisibility(View.GONE);
-                    tvForgotPassword.setVisibility(View.GONE);
-                    btnNativeLogin.setText("Send Reset Link");
-                    tvToggleMode.setText("Back to Sign In");
-                    break;
-            }
-        });
-    }
-
-    private void initGoogleSignIn(String clientId) {
-        GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                .requestIdToken(clientId)
-                .requestEmail()
-                .build();
-        mGoogleSignInClient = GoogleSignIn.getClient(this, gso);
-    }
-
-    private void launchGoogleSignInIntent() {
-        if (mGoogleSignInClient == null) {
-            return;
-        }
-        final boolean[] launched = {false};
-        Runnable launchIntentRunnable = () -> {
-            if (!launched[0]) {
-                launched[0] = true;
+    private void playBackgroundVideo() {
+        if (videoView != null) {
+            runOnUiThread(() -> {
                 try {
-                    Intent signInIntent = mGoogleSignInClient.getSignInIntent();
-                    startActivityForResult(signInIntent, RC_SIGN_IN);
+                    Uri videoUri = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.login_bg);
+                    videoView.setVideoURI(videoUri);
+                    videoView.setOnPreparedListener(mp -> {
+                        mp.setLooping(true);
+                        videoView.start();
+                    });
                 } catch (Exception e) {
                     e.printStackTrace();
-                    Toast.makeText(this, "Failed to start Google selector", Toast.LENGTH_SHORT).show();
-                    resetLoginButtons();
                 }
+            });
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (loginScreenContainer != null && loginScreenContainer.getVisibility() == View.VISIBLE) {
+            playBackgroundVideo();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (videoView != null && videoView.isPlaying()) {
+            videoView.pause();
+        }
+    }
+
+    private void checkAuthAndStart() {
+        FirebaseUser user = mAuth.getCurrentUser();
+        if (user != null) {
+            // User is authenticated. Fetch token and load the website.
+            fetchTokenAndLoadWeb(user);
+        } else {
+            // Not authenticated. Show Login UI.
+            runOnUiThread(() -> {
+                splashScreen.setVisibility(View.GONE);
+                loginScreenContainer.setVisibility(View.VISIBLE);
+                setStatusBarLightIcons(false); // Light icons over dark video background
+                playBackgroundVideo();
+            });
+        }
+    }
+
+    private void fetchTokenAndLoadWeb(FirebaseUser user) {
+        runOnUiThread(() -> {
+            glassLoadingOverlay.setVisibility(View.VISIBLE);
+            setStatusBarLightIcons(false); // keep status bar elegant during loading
+        });
+
+        user.getIdToken(true).addOnCompleteListener(task -> {
+            if (task.isSuccessful() && task.getResult() != null) {
+                currentIdToken = task.getResult().getToken();
+                currentExpirationTime = task.getResult().getExpirationTimestamp() * 1000;
+
+                runOnUiThread(() -> {
+                    loginScreenContainer.setVisibility(View.GONE);
+                    if (videoView != null && videoView.isPlaying()) {
+                        videoView.stopPlayback();
+                    }
+                    attemptLoadUrl();
+                });
+            } else {
+                runOnUiThread(() -> {
+                    glassLoadingOverlay.setVisibility(View.GONE);
+                    Toast.makeText(MainActivity.this, "Failed to retrieve secure session token. Please sign in again.", Toast.LENGTH_LONG).show();
+                    mAuth.signOut();
+                    loginScreenContainer.setVisibility(View.VISIBLE);
+                    setStatusBarLightIcons(false);
+                    playBackgroundVideo();
+                });
             }
-        };
-
-        // Set a timeout of 1500ms to launch the intent anyway if signOut hangs
-        Handler handler = new Handler(Looper.getMainLooper());
-        handler.postDelayed(launchIntentRunnable, 1500);
-
-        mGoogleSignInClient.signOut().addOnCompleteListener(task -> {
-            handler.removeCallbacks(launchIntentRunnable);
-            runOnUiThread(launchIntentRunnable);
         });
     }
 
-    private void checkAndExtractClientId(String url) {
-        // Strict Web Client ID enforced. Dynamic extraction is disabled to prevent mismatched IDs.
+    private void setFormMode(FormMode mode) {
+        currentFormMode = mode;
+        if (mode == FormMode.LOGIN) {
+            tvFormTitle.setText("LOG IN");
+            etName.setVisibility(View.GONE);
+            etEmail.setVisibility(View.VISIBLE);
+            etPassword.setVisibility(View.VISIBLE);
+            btnForgotPassword.setVisibility(View.VISIBLE);
+            btnNativeLogin.setText("Log In");
+            tvToggleInfo.setText("Don't have an account? ");
+            btnToggleSignup.setText("Create Account");
+        } else if (mode == FormMode.SIGN_UP) {
+            tvFormTitle.setText("CREATE ACCOUNT");
+            etName.setVisibility(View.VISIBLE);
+            etEmail.setVisibility(View.VISIBLE);
+            etPassword.setVisibility(View.VISIBLE);
+            btnForgotPassword.setVisibility(View.GONE);
+            btnNativeLogin.setText("Create Account");
+            tvToggleInfo.setText("Already have an account? ");
+            btnToggleSignup.setText("Log In");
+        } else if (mode == FormMode.FORGOT_PASSWORD) {
+            tvFormTitle.setText("RESET PASSWORD");
+            etName.setVisibility(View.GONE);
+            etEmail.setVisibility(View.VISIBLE);
+            etPassword.setVisibility(View.GONE);
+            btnForgotPassword.setVisibility(View.GONE);
+            btnNativeLogin.setText("Send Reset Link");
+            tvToggleInfo.setText("Remembered your password? ");
+            btnToggleSignup.setText("Log In");
+        }
+    }
+
+    private void setupLoginListeners() {
+        // Toggle Sign Up Mode Footer
+        btnToggleSignup.setOnClickListener(v -> {
+            if (currentFormMode == FormMode.LOGIN) {
+                setFormMode(FormMode.SIGN_UP);
+            } else {
+                setFormMode(FormMode.LOGIN);
+            }
+        });
+
+        // Circular Email Toggle Button Listener
+        btnEmailToggle.setOnClickListener(v -> {
+            if (credentialsCard.getVisibility() == View.VISIBLE) {
+                credentialsCard.setVisibility(View.GONE);
+            } else {
+                credentialsCard.setVisibility(View.VISIBLE);
+                setFormMode(FormMode.LOGIN);
+            }
+        });
+
+        // Forgot Password Click inside Card
+        btnForgotPassword.setOnClickListener(v -> {
+            setFormMode(FormMode.FORGOT_PASSWORD);
+        });
+
+        // Native Login Button Handler
+        btnNativeLogin.setOnClickListener(v -> {
+            String email = etEmail.getText().toString().trim();
+
+            if (currentFormMode == FormMode.FORGOT_PASSWORD) {
+                if (email.isEmpty()) {
+                    Toast.makeText(this, "Please enter your email address.", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.VISIBLE));
+                mAuth.sendPasswordResetEmail(email)
+                        .addOnCompleteListener(task -> {
+                            runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
+                            if (task.isSuccessful()) {
+                                Toast.makeText(MainActivity.this, "Password reset email sent successfully.", Toast.LENGTH_SHORT).show();
+                                setFormMode(FormMode.LOGIN);
+                            } else {
+                                Toast.makeText(MainActivity.this, "Failed to send reset email: " +
+                                        (task.getException() != null ? task.getException().getMessage() : "Unknown Error"),
+                                        Toast.LENGTH_LONG).show();
+                            }
+                        });
+                return;
+            }
+
+            String password = etPassword.getText().toString().trim();
+            if (email.isEmpty() || password.isEmpty()) {
+                Toast.makeText(this, "Please fill in all email and password fields.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (password.length() < 6) {
+                Toast.makeText(this, "Password must be at least 6 characters.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.VISIBLE));
+
+            if (currentFormMode == FormMode.SIGN_UP) {
+                String name = etName.getText().toString().trim();
+                if (name.isEmpty()) {
+                    runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
+                    Toast.makeText(this, "Please enter your name.", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                // Firebase Create User
+                mAuth.createUserWithEmailAndPassword(email, password)
+                        .addOnCompleteListener(this, task -> {
+                            if (task.isSuccessful()) {
+                                FirebaseUser user = mAuth.getCurrentUser();
+                                if (user != null) {
+                                    UserProfileChangeRequest profileUpdates = new UserProfileChangeRequest.Builder()
+                                            .setDisplayName(name)
+                                            .build();
+                                    user.updateProfile(profileUpdates).addOnCompleteListener(profileTask -> {
+                                        fetchTokenAndLoadWeb(user);
+                                    });
+                                }
+                            } else {
+                                runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
+                                Toast.makeText(MainActivity.this, "Registration failed: " +
+                                        (task.getException() != null ? task.getException().getMessage() : "Unknown Error"),
+                                        Toast.LENGTH_LONG).show();
+                            }
+                        });
+            } else {
+                // Firebase Login
+                mAuth.signInWithEmailAndPassword(email, password)
+                        .addOnCompleteListener(this, task -> {
+                            if (task.isSuccessful()) {
+                                FirebaseUser user = mAuth.getCurrentUser();
+                                if (user != null) {
+                                    fetchTokenAndLoadWeb(user);
+                                }
+                            } else {
+                                runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
+                                Toast.makeText(MainActivity.this, "Authentication failed: " +
+                                        (task.getException() != null ? task.getException().getMessage() : "Invalid credentials"),
+                                        Toast.LENGTH_LONG).show();
+                            }
+                        });
+            }
+        });
+
+        // Google Sign-In Click
+        btnGoogleSignin.setOnClickListener(v -> {
+            if (!isNetworkConnected()) {
+                Toast.makeText(this, "You are currently offline. Please check your internet connection.", Toast.LENGTH_SHORT).show();
+                showOfflineScreen();
+                return;
+            }
+            runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.VISIBLE));
+            mGoogleSignInClient.signOut().addOnCompleteListener(task -> {
+                Intent signInIntent = mGoogleSignInClient.getSignInIntent();
+                startActivityForResult(signInIntent, GOOGLE_SIGN_IN_REQUEST_CODE);
+            });
+        });
+
+        // Retry Connection click handler
+        btnRetry.setOnClickListener(v -> attemptLoadUrl());
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -538,142 +493,107 @@ public class MainActivity extends AppCompatActivity {
             cookieManager.setAcceptThirdPartyCookies(webView, true);
         }
 
-        // Dynamically clean User Agent to bypass Google's disallowed_useragent checks in WebViews with robust regex
+        // Dynamically clean User Agent to bypass Google's disallowed_useragent checks in WebViews
         String originalUserAgent = settings.getUserAgentString();
         if (originalUserAgent != null) {
             String cleanUserAgent = originalUserAgent.replace("; wv", "");
-            cleanUserAgent = cleanUserAgent.replaceAll("Version/[0-9.]+\\s?", "");
-            cleanUserAgent = cleanUserAgent + " YaraanFlutterApp";
+            cleanUserAgent = cleanUserAgent.replaceAll("Version/\\d+\\.\\d+\\s?", "");
             settings.setUserAgentString(cleanUserAgent);
         }
 
         // Custom WebViewClient
-        webView.addJavascriptInterface(new WebAppInterface(), "YaraanAppChannel");
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
 
-                // Inject CSS to completely hide/bypass the website's built-in login screen (#view-auth)
-                webView.evaluateJavascript(
-                    "var style = document.createElement('style'); " +
-                    "style.innerHTML = '#view-auth { display: none !important; }'; " +
-                    "document.head.appendChild(style);", null);
+                // Inject secure Session Bridge if logged in
+                if (mAuth.getCurrentUser() != null && currentIdToken != null) {
+                    String authValueJson = buildFirebaseStoreValueJson(mAuth.getCurrentUser(), currentIdToken, currentExpirationTime);
+                    String apiKey = "AIzaSyA_06bFtGC54BqB1OoGBU4nAyPABIWsGow";
+                    String authKey = "firebase:authUser:" + apiKey + ":[DEFAULT]";
 
-                // Inject dynamic auth state listener to notify Android on successful login
-                webView.evaluateJavascript(
-                    "if (window.auth) { " +
-                    "    window.auth.onAuthStateChanged(function(user) { " +
-                    "        if (user) { " +
-                    "            YaraanAppChannel.postMessage(JSON.stringify({type: 'login_success', uid: user.uid})); " +
-                    "        } " +
-                    "    }); " +
-                    "}", null);
+                    String jsInjection = "javascript:(function() {"
+                            + "var authKey = '" + authKey + "';"
+                            + "var authValue = " + authValueJson + ";"
+                            + "try {"
+                                + "localStorage.setItem(authKey, JSON.stringify(authValue));"
+                                + "console.log('Injected auth token to LocalStorage');"
+                            + "} catch(e) { console.error('Error in LocalStorage injection', e); }"
+                            + "try {"
+                                + "var indexedDB = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB || window.msIndexedDB;"
+                                + "if (indexedDB) {"
+                                    + "var request = indexedDB.open('firebaseLocalStorageDb', 1);"
+                                    + "request.onupgradeneeded = function(e) {"
+                                        + "var db = e.target.result;"
+                                        + "if (!db.objectStoreNames.contains('firebaseLocalStorage')) {"
+                                            + "db.createObjectStore('firebaseLocalStorage', { keyPath: 'fbase_key' });"
+                                        + "}"
+                                    + "};"
+                                    + "request.onsuccess = function(e) {"
+                                        + "var db = e.target.result;"
+                                        + "var transaction = db.transaction(['firebaseLocalStorage'], 'readwrite');"
+                                        + "var store = transaction.objectStore('firebaseLocalStorage');"
+                                        + "var record = {"
+                                            + "fbase_key: authKey,"
+                                            + "value: authValue"
+                                        + "};"
+                                        + "var putReq = store.put(record);"
+                                        + "putReq.onsuccess = function() {"
+                                            + "console.log('Injected auth token to IndexedDB');"
+                                        + "};"
+                                    + "};"
+                                + "}"
+                            + "} catch(e) { console.error('Error in IndexedDB injection', e); }"
+                            + "})();";
 
-                // Inject alerts/Swal/unhandledrejection overrides to propagate authentication or general errors back to native
-                webView.evaluateJavascript(
-                    "(function() { " +
-                    "    const originalAlert = window.alert; " +
-                    "    window.alert = function(msg) { " +
-                    "        if (window.YaraanAppChannel) { " +
-                    "            window.YaraanAppChannel.postMessage(JSON.stringify({type: 'error', message: String(msg)})); " +
-                    "        } " +
-                    "        originalAlert.apply(this, arguments); " +
-                    "    }; " +
-                    "    function extractSwalText(obj) { " +
-                    "        if (!obj) return 'Authentication failed'; " +
-                    "        if (typeof obj === 'string') return obj; " +
-                    "        if (obj.text) return obj.text; " +
-                    "        if (obj.title && !obj.html) return obj.title; " +
-                    "        if (obj.html) { " +
-                    "            try { " +
-                    "                var temp = document.createElement('div'); " +
-                    "                temp.innerHTML = obj.html; " +
-                    "                var h3 = temp.querySelector('h3'); " +
-                    "                var p = temp.querySelector('p'); " +
-                    "                var msg = ''; " +
-                    "                if (h3) msg += h3.textContent.trim() + ' - '; " +
-                    "                if (p) msg += p.textContent.trim(); " +
-                    "                if (!msg) msg = temp.textContent.trim(); " +
-                    "                return msg || 'Authentication failed'; " +
-                    "            } catch(e) { " +
-                    "                return 'Authentication failed'; " +
-                    "            } " +
-                    "        } " +
-                    "        return JSON.stringify(obj); " +
-                    "    } " +
-                    "    function hookSwal() { " +
-                    "        if (window.Swal && window.Swal.fire && !window.Swal._hooked) { " +
-                    "            window.Swal._hooked = true; " +
-                    "            const originalSwalFire = window.Swal.fire; " +
-                    "            window.Swal.fire = function() { " +
-                    "                let msg = ''; " +
-                    "                if (arguments.length > 0) { " +
-                    "                    msg = extractSwalText(arguments[0]); " +
-                    "                } " +
-                    "                if (window.YaraanAppChannel) { " +
-                    "                    window.YaraanAppChannel.postMessage(JSON.stringify({type: 'error', message: msg})); " +
-                    "                } " +
-                    "                return originalSwalFire.apply(this, arguments); " +
-                    "            }; " +
-                    "        } " +
-                    "        if (window.swal && !window.swal._hooked) { " +
-                    "            window.swal._hooked = true; " +
-                    "            const originalSwal = window.swal; " +
-                    "            window.swal = function() { " +
-                    "                let msg = ''; " +
-                    "                if (arguments.length > 0) { " +
-                    "                    msg = extractSwalText(arguments[0]); " +
-                    "                } " +
-                    "                if (window.YaraanAppChannel) { " +
-                    "                    window.YaraanAppChannel.postMessage(JSON.stringify({type: 'error', message: msg})); " +
-                    "                } " +
-                    "                return originalSwal.apply(this, arguments); " +
-                    "            }; " +
-                    "        } " +
-                    "    } " +
-                    "    hookSwal(); " +
-                    "    setInterval(hookSwal, 1000); " +
-                    "    window.addEventListener('unhandledrejection', function(event) { " +
-                    "        let msg = event.reason ? (event.reason.message || event.reason) : 'Unknown Error'; " +
-                    "        if (window.YaraanAppChannel) { " +
-                    "            window.YaraanAppChannel.postMessage(JSON.stringify({type: 'error', message: String(msg)})); " +
-                    "        } " +
-                    "    }); " +
-                    "})();", null);
-
-                // Hide Splash screen once fully loaded
-                if (splashScreen.getVisibility() == View.VISIBLE) {
-                    AlphaAnimation fadeOut = new AlphaAnimation(1.0f, 0.0f);
-                    fadeOut.setDuration(400);
-                    fadeOut.setAnimationListener(new android.view.animation.Animation.AnimationListener() {
-                        @Override
-                        public void onAnimationStart(android.view.animation.Animation animation) {}
-
-                        @Override
-                        public void onAnimationEnd(android.view.animation.Animation animation) {
-                            splashScreen.setVisibility(View.GONE);
-                            // Only show WebView if user is logged in
-                            SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-                            boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
-                            if (isLoggedIn) {
-                                webView.setVisibility(View.VISIBLE);
-                            } else {
-                                showNativeLoginScreen();
-                            }
-                        }
-
-                        @Override
-                        public void onAnimationRepeat(android.view.animation.Animation animation) {}
-                    });
-                    splashScreen.startAnimation(fadeOut);
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                        view.evaluateJavascript(jsInjection, null);
+                    } else {
+                        view.loadUrl(jsInjection);
+                    }
                 }
-            }
 
-            @Override
-            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                super.onPageStarted(view, url, favicon);
-                checkAndExtractClientId(url);
+                // Smoothly dismiss transitions and reveal WebView after write-back completes
+                view.postDelayed(() -> {
+                    runOnUiThread(() -> {
+                        // Change status bar icons to adapt to light web content (dark icons on light bg)
+                        setStatusBarLightIcons(true);
+
+                        if (glassLoadingOverlay.getVisibility() == View.VISIBLE) {
+                            AlphaAnimation fadeOut = new AlphaAnimation(1.0f, 0.0f);
+                            fadeOut.setDuration(400);
+                            fadeOut.setAnimationListener(new android.view.animation.Animation.AnimationListener() {
+                                @Override
+                                public void onAnimationStart(android.view.animation.Animation animation) {}
+                                @Override
+                                public void onAnimationEnd(android.view.animation.Animation animation) {
+                                    glassLoadingOverlay.setVisibility(View.GONE);
+                                    webView.setVisibility(View.VISIBLE);
+                                }
+                                @Override
+                                public void onAnimationRepeat(android.view.animation.Animation animation) {}
+                            });
+                            glassLoadingOverlay.startAnimation(fadeOut);
+                        }
+                        if (splashScreen.getVisibility() == View.VISIBLE) {
+                            AlphaAnimation fadeOut = new AlphaAnimation(1.0f, 0.0f);
+                            fadeOut.setDuration(400);
+                            fadeOut.setAnimationListener(new android.view.animation.Animation.AnimationListener() {
+                                @Override
+                                public void onAnimationStart(android.view.animation.Animation animation) {}
+                                @Override
+                                public void onAnimationEnd(android.view.animation.Animation animation) {
+                                    splashScreen.setVisibility(View.GONE);
+                                    webView.setVisibility(View.VISIBLE);
+                                }
+                                @Override
+                                public void onAnimationRepeat(android.view.animation.Animation animation) {}
+                            });
+                            splashScreen.startAnimation(fadeOut);
+                        }
+                    });
+                }, 1000);
             }
 
             @SuppressWarnings("deprecation")
@@ -693,9 +613,8 @@ public class MainActivity extends AppCompatActivity {
             @SuppressWarnings("deprecation")
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                checkAndExtractClientId(url);
                 if (url.startsWith("http://") || url.startsWith("https://")) {
-                    return false; // Load in WebView
+                    return false;
                 }
                 try {
                     Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
@@ -710,9 +629,8 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request) {
                 String url = request.getUrl().toString();
-                checkAndExtractClientId(url);
                 if (url.startsWith("http://") || url.startsWith("https://")) {
-                    return false; // Load in WebView
+                    return false;
                 }
                 try {
                     Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
@@ -735,114 +653,10 @@ public class MainActivity extends AppCompatActivity {
                 });
             }
 
-            @SuppressLint("SetJavaScriptEnabled")
             @Override
             public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, android.os.Message resultMsg) {
-                if (popupDialog != null && popupDialog.isShowing()) {
-                    popupDialog.dismiss();
-                    popupDialog = null;
-                }
-                if (popupWebView != null) {
-                    popupWebView.destroy();
-                    popupWebView = null;
-                }
-
-                popupWebView = new WebView(MainActivity.this);
-                popupWebView.setLayoutParams(new FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.MATCH_PARENT
-                ));
-
-                popupWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-
-                WebSettings popupSettings = popupWebView.getSettings();
-                popupSettings.setJavaScriptEnabled(true);
-                popupSettings.setDomStorageEnabled(true);
-                popupSettings.setDatabaseEnabled(true);
-                popupSettings.setAllowFileAccess(true);
-                popupSettings.setAllowContentAccess(true);
-                popupSettings.setUseWideViewPort(true);
-                popupSettings.setLoadWithOverviewMode(true);
-                popupSettings.setSupportMultipleWindows(true);
-                popupSettings.setJavaScriptCanOpenWindowsAutomatically(true);
-
-                android.webkit.CookieManager cookieManager = android.webkit.CookieManager.getInstance();
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    cookieManager.setAcceptThirdPartyCookies(popupWebView, true);
-                }
-
-                String originalUA = popupSettings.getUserAgentString();
-                if (originalUA != null) {
-                    String cleanUA = originalUA.replace("; wv", "");
-                    cleanUA = cleanUA.replaceAll("Version/[0-9.]+\\s?", "");
-                    cleanUA = cleanUA + " YaraanFlutterApp";
-                    popupSettings.setUserAgentString(cleanUA);
-                }
-
-                popupWebView.setWebViewClient(new WebViewClient() {
-                    @Override
-                    public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                        super.onPageStarted(view, url, favicon);
-                        checkAndExtractClientId(url);
-                    }
-
-                    @Override
-                    public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                        checkAndExtractClientId(url);
-                        return false;
-                    }
-
-                    @TargetApi(Build.VERSION_CODES.N)
-                    @Override
-                    public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request) {
-                        checkAndExtractClientId(request.getUrl().toString());
-                        return false;
-                    }
-                });
-
-                popupDialog = new Dialog(MainActivity.this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
-                popupDialog.setContentView(popupWebView);
-                popupDialog.setCancelable(true);
-
-                popupDialog.setOnCancelListener(dialog -> {
-                    if (popupWebView != null) {
-                        popupWebView.destroy();
-                        popupWebView = null;
-                    }
-                    popupDialog = null;
-                    SharedPreferences prefs1 = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-                    boolean isLoggedIn = prefs1.getBoolean("is_logged_in", false);
-                    if (!isLoggedIn) {
-                        showNativeLoginScreen();
-                        resetLoginButtons();
-                    }
-                });
-
-                popupWebView.setWebChromeClient(new WebChromeClient() {
-                    @Override
-                    public void onCloseWindow(WebView window) {
-                        super.onCloseWindow(window);
-                        if (popupDialog != null && popupDialog.isShowing()) {
-                            popupDialog.dismiss();
-                            popupDialog = null;
-                        }
-                        if (popupWebView != null) {
-                            popupWebView.destroy();
-                            popupWebView = null;
-                        }
-                        SharedPreferences prefs1 = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-                        boolean isLoggedIn = prefs1.getBoolean("is_logged_in", false);
-                        if (!isLoggedIn) {
-                            showNativeLoginScreen();
-                            resetLoginButtons();
-                        }
-                    }
-                });
-
-                popupDialog.show();
-
                 WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
-                transport.setWebView(popupWebView);
+                transport.setWebView(view);
                 resultMsg.sendToTarget();
                 return true;
             }
@@ -896,6 +710,42 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private String buildFirebaseStoreValueJson(FirebaseUser user, String idToken, long expirationTime) {
+        String uid = user.getUid() != null ? user.getUid() : "";
+        String email = user.getEmail() != null ? user.getEmail() : "";
+        boolean emailVerified = user.isEmailVerified();
+        String displayName = user.getDisplayName() != null ? user.getDisplayName() : "";
+        String photoUrl = user.getPhotoUrl() != null ? user.getPhotoUrl().toString() : "";
+        String apiKey = "AIzaSyA_06bFtGC54BqB1OoGBU4nAyPABIWsGow";
+
+        return "{"
+                + "\"uid\":\"" + escapeJsString(uid) + "\","
+                + "\"email\":\"" + escapeJsString(email) + "\","
+                + "\"emailVerified\":" + emailVerified + ","
+                + "\"displayName\":\"" + escapeJsString(displayName) + "\","
+                + "\"photoURL\":\"" + escapeJsString(photoUrl) + "\","
+                + "\"isAnonymous\":false,"
+                + "\"tenantId\":null,"
+                + "\"providerData\":[],"
+                + "\"stsTokenManager\":{"
+                + "\"apiKey\":\"" + apiKey + "\","
+                + "\"refreshToken\":\"" + escapeJsString(idToken) + "\","
+                + "\"accessToken\":\"" + escapeJsString(idToken) + "\","
+                + "\"expirationTime\":" + expirationTime
+                + "},"
+                + "\"apiKey\":\"" + apiKey + "\","
+                + "\"appName\":\"[DEFAULT]\""
+                + "}";
+    }
+
+    private String escapeJsString(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+    }
+
     private File createImageFile() throws IOException {
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
         String imageFileName = "JPEG_" + timeStamp + "_";
@@ -911,55 +761,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode == RC_SIGN_IN) {
-            // Re-enable interactive elements
-            resetLoginButtons();
-
-            Task<GoogleSignInAccount> task = GoogleSignIn.getSignedInAccountFromIntent(data);
-            try {
-                GoogleSignInAccount account = task.getResult(ApiException.class);
-                String idToken = account.getIdToken();
-                if (idToken != null) {
-                    // Ensure checkbox is checked on web-side as well
-                    webView.evaluateJavascript(
-                        "var cb = document.getElementById('privacy-checkbox'); " +
-                        "if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }", null);
-
-                    // Send Google security ID Token to the WebView
-                    JSONObject jsonPayload = new JSONObject();
-                    jsonPayload.put("type", "googleLogin");
-                    jsonPayload.put("idToken", idToken);
-
-                    String js = "window.postMessage(" + jsonPayload.toString() + ", '*');";
-                    webView.evaluateJavascript(js, null);
-                } else {
-                    Toast.makeText(this, "Failed to retrieve Google token.", Toast.LENGTH_SHORT).show();
-                }
-            } catch (ApiException e) {
-                e.printStackTrace();
-                int statusCode = e.getStatusCode();
-                Log.e("YaraanGoogleAuth", "Google Sign-In ApiException status code: " + statusCode + ", message: " + e.getMessage());
-                String message;
-                if (statusCode == 7) { // CommonStatusCodes.NETWORK_ERROR
-                    message = "Network error (Code 7). Please check your internet connection.";
-                } else if (statusCode == 10) { // DEVELOPER_ERROR
-                    message = "Developer Error (Code 10). Check Google SHA-1 & Client ID setup.";
-                } else if (statusCode == 12500) { // SIGN_IN_FAILED
-                    message = "Sign-In Failed (Code 12500). Please try again or update Play Services.";
-                } else if (statusCode == 12501) { // CommonStatusCodes.CANCELED
-                    message = "Sign-In cancelled (Code 12501).";
-                } else if (statusCode == 12502) {
-                    message = "Sign-In in progress (Code 12502). Please wait.";
-                } else {
-                    message = "Google Sign-In failed (Status Code " + statusCode + "). Please try again.";
-                }
-                Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-            } catch (Exception e) {
-                e.printStackTrace();
-                Log.e("YaraanGoogleAuth", "Google Sign-In unexpected error: " + e.getMessage(), e);
-                Toast.makeText(this, "Google Sign-In error: " + e.getMessage(), Toast.LENGTH_LONG).show();
-            }
-        } else if (requestCode == FILE_CHOOSER_REQUEST_CODE) {
+        if (requestCode == FILE_CHOOSER_REQUEST_CODE) {
             if (filePathCallback == null) {
                 super.onActivityResult(requestCode, resultCode, data);
                 return;
@@ -982,36 +784,48 @@ public class MainActivity extends AppCompatActivity {
 
             filePathCallback.onReceiveValue(results);
             filePathCallback = null;
+        } else if (requestCode == GOOGLE_SIGN_IN_REQUEST_CODE) {
+            Task<GoogleSignInAccount> task = GoogleSignIn.getSignedInAccountFromIntent(data);
+            try {
+                GoogleSignInAccount account = task.getResult(ApiException.class);
+                if (account != null) {
+                    firebaseAuthWithGoogle(account);
+                } else {
+                    runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
+                    Toast.makeText(this, "Google Sign-In returned null account.", Toast.LENGTH_SHORT).show();
+                }
+            } catch (ApiException e) {
+                runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
+                Toast.makeText(this, "Google Sign-In failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            }
         } else {
             super.onActivityResult(requestCode, resultCode, data);
         }
+    }
+
+    private void firebaseAuthWithGoogle(GoogleSignInAccount acct) {
+        AuthCredential credential = GoogleAuthProvider.getCredential(acct.getIdToken(), null);
+        mAuth.signInWithCredential(credential)
+                .addOnCompleteListener(this, task -> {
+                    if (task.isSuccessful()) {
+                        FirebaseUser user = mAuth.getCurrentUser();
+                        if (user != null) {
+                            fetchTokenAndLoadWeb(user);
+                        }
+                    } else {
+                        runOnUiThread(() -> glassLoadingOverlay.setVisibility(View.GONE));
+                        Toast.makeText(MainActivity.this, "Firebase login with Google failed: " +
+                                (task.getException() != null ? task.getException().getMessage() : "Unknown"),
+                                Toast.LENGTH_LONG).show();
+                    }
+                });
     }
 
     private void setupBackButton() {
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
-                if (popupDialog != null && popupDialog.isShowing()) {
-                    popupDialog.dismiss();
-                    popupDialog = null;
-                    if (popupWebView != null) {
-                        popupWebView.destroy();
-                        popupWebView = null;
-                    }
-                    SharedPreferences prefs1 = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-                    boolean isLoggedIn = prefs1.getBoolean("is_logged_in", false);
-                    if (!isLoggedIn) {
-                        showNativeLoginScreen();
-                        resetLoginButtons();
-                    }
-                } else if (sectionEmailLogin.getVisibility() == View.VISIBLE) {
-                    runOnUiThread(() -> {
-                        sectionEmailLogin.setVisibility(View.GONE);
-                        sectionInitialLogin.setVisibility(View.VISIBLE);
-                    });
-                } else if (nativeLoginScreen.getVisibility() == View.VISIBLE) {
-                    finish();
-                } else if (webView.canGoBack()) {
+                if (webView.canGoBack()) {
                     webView.goBack();
                 } else {
                     finish();
@@ -1078,40 +892,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        configureFullScreen();
-        if (videoView != null && nativeLoginScreen.getVisibility() == View.VISIBLE) {
-            videoView.start();
-        }
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        if (videoView != null) {
-            videoView.pause();
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            android.webkit.CookieManager.getInstance().flush();
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
-        unregisterNetworkCallback();
-        if (videoView != null) {
-            videoView.stopPlayback();
-        }
-        super.onDestroy();
-    }
-
     private boolean isNetworkConnected() {
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         if (cm != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                Network network = cm.getActiveNetwork();
+                android.net.Network network = cm.getActiveNetwork();
                 if (network != null) {
                     NetworkCapabilities capabilities = cm.getNetworkCapabilities(network);
                     return capabilities != null && (
@@ -1130,90 +915,16 @@ public class MainActivity extends AppCompatActivity {
     private void showOfflineScreen() {
         webView.setVisibility(View.GONE);
         splashScreen.setVisibility(View.GONE);
-        nativeLoginScreen.setVisibility(View.GONE);
+        loginScreenContainer.setVisibility(View.GONE);
+        glassLoadingOverlay.setVisibility(View.GONE);
         offlineScreen.setVisibility(View.VISIBLE);
     }
 
     private void hideOfflineScreen() {
         offlineScreen.setVisibility(View.GONE);
-        if (splashScreen.getVisibility() != View.VISIBLE) {
-            SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-            boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
-            if (isLoggedIn) {
-                webView.setVisibility(View.VISIBLE);
-            } else {
-                showNativeLoginScreen();
-            }
-        }
-    }
-
-    public class WebAppInterface {
-        @JavascriptInterface
-        public void postMessage(String message) {
-            runOnUiThread(() -> {
-                handleWebMessage(message);
-            });
-        }
-    }
-
-    private void handleWebMessage(String message) {
-        if (message == null) return;
-        try {
-            if (message.equals("user_logged_out")) {
-                SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-                prefs.edit().putBoolean("is_logged_in", false).apply();
-                showNativeLoginScreen();
-            } else if (message.startsWith("{")) {
-                JSONObject json = new JSONObject(message);
-                String type = json.optString("type");
-                if (type.equals("login_success")) {
-                    SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-                    prefs.edit().putBoolean("is_logged_in", true).apply();
-                    hideNativeLoginScreen();
-                    resetLoginButtons();
-                } else if (type.equals("error")) {
-                    String errorMsg = json.optString("message", "Authentication failed");
-                    Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show();
-                    resetLoginButtons();
-                } else if (type.equals("forgot_password_closed")) {
-                    showNativeLoginScreen();
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void showNativeLoginScreen() {
-        runOnUiThread(() -> {
-            webView.setVisibility(View.INVISIBLE);
-            nativeLoginScreen.setVisibility(View.VISIBLE);
-            if (videoView != null) {
-                videoView.start();
-            }
-        });
-    }
-
-    private void hideNativeLoginScreen() {
-        runOnUiThread(() -> {
-            nativeLoginScreen.setVisibility(View.GONE);
+        if (splashScreen.getVisibility() != View.VISIBLE && loginScreenContainer.getVisibility() != View.VISIBLE && glassLoadingOverlay.getVisibility() != View.VISIBLE) {
             webView.setVisibility(View.VISIBLE);
-            if (videoView != null) {
-                videoView.pause();
-            }
-        });
-    }
-
-    private final Handler timeoutHandler = new Handler(Looper.getMainLooper());
-    private final Runnable timeoutRunnable = this::resetLoginButtons;
-
-    private void resetLoginButtons() {
-        runOnUiThread(() -> {
-            timeoutHandler.removeCallbacks(timeoutRunnable);
-            btnNativeLogin.setEnabled(true);
-            btnNativeLogin.setText(currentFormMode == FormMode.LOGIN ? "Sign In" : (currentFormMode == FormMode.REGISTER ? "Create Account" : "Send Reset Link"));
-            btnNativeGoogle.setEnabled(true);
-        });
+        }
     }
 
     private void checkAndRequestPermissions() {

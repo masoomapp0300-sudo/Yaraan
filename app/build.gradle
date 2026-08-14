@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -7,10 +8,10 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.umar.yaraan.chate"
+        applicationId "com.umar.yaraan"
         minSdk 24
         targetSdk 35
-        versionCode 10
+        versionCode 7
         versionName "1.0.7"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -30,23 +31,16 @@ android {
     }
 }
 
-tasks.register("copyRootAssets", Copy) {
-    from "../assets"
-    into "src/main/assets"
-    include "**/*"
-}
-
-project.afterEvaluate {
-    tasks.named("preBuild").configure {
-        dependsOn("copyRootAssets")
-    }
-}
-
 dependencies {
     implementation libs.appcompat
     implementation libs.material
     implementation libs.constraintlayout
-    implementation 'com.google.android.gms:play-services-auth:20.7.0'
+
+    // Firebase & Play Services Auth
+    implementation platform(libs.firebase.bom)
+    implementation libs.firebase.auth
+    implementation libs.play.services.auth
+
     testImplementation libs.junit
     androidTestImplementation libs.ext.junit
     androidTestImplementation libs.espresso.core
