@@ -938,20 +938,26 @@ public class MainActivity extends AppCompatActivity {
             } catch (ApiException e) {
                 e.printStackTrace();
                 int statusCode = e.getStatusCode();
+                Log.e("YaraanGoogleAuth", "Google Sign-In ApiException status code: " + statusCode + ", message: " + e.getMessage());
                 String message;
                 if (statusCode == 7) { // CommonStatusCodes.NETWORK_ERROR
-                    message = "Network error. Please check your internet connection and try again.";
+                    message = "Network error (Code 7). Please check your internet connection.";
+                } else if (statusCode == 10) { // DEVELOPER_ERROR
+                    message = "Developer Error (Code 10). Check Google SHA-1 & Client ID setup.";
+                } else if (statusCode == 12500) { // SIGN_IN_FAILED
+                    message = "Sign-In Failed (Code 12500). Please try again or update Play Services.";
                 } else if (statusCode == 12501) { // CommonStatusCodes.CANCELED
-                    message = "Sign-In cancelled.";
+                    message = "Sign-In cancelled (Code 12501).";
                 } else if (statusCode == 12502) {
-                    message = "Sign-In in progress. Please wait.";
+                    message = "Sign-In in progress (Code 12502). Please wait.";
                 } else {
-                    message = "Google Sign-In failed (code " + statusCode + "). Please try again.";
+                    message = "Google Sign-In failed (Status Code " + statusCode + "). Please try again.";
                 }
-                Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show();
             } catch (Exception e) {
                 e.printStackTrace();
-                Toast.makeText(this, "Google Sign-In failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                Log.e("YaraanGoogleAuth", "Google Sign-In unexpected error: " + e.getMessage(), e);
+                Toast.makeText(this, "Google Sign-In error: " + e.getMessage(), Toast.LENGTH_LONG).show();
             }
         } else if (requestCode == FILE_CHOOSER_REQUEST_CODE) {
             if (filePathCallback == null) {
