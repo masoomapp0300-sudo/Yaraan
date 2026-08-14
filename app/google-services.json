@@ -15,14 +15,6 @@
       },
       "oauth_client": [
         {
-          "client_id": "740464208491-c4pt68crdjudvhg92j6p3t6or2jch9t9.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.umar.yaraan.chate",
-            "certificate_hash": "280493104b31edd979da6d826d341414c96f6ddf"
-          }
-        },
-        {
           "client_id": "740464208491-mt79in1nlehgcev1q3rfff9cpogvbct2.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
