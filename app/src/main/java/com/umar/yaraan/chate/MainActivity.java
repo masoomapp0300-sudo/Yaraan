@@ -188,10 +188,8 @@ public class MainActivity extends AppCompatActivity {
         // 2. Setup WebView and Settings
         setupWebView();
 
-        // 3. Initialize Google Sign-In SDK with the correct Firebase Web Client ID
-        SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-        String cachedClientId = prefs.getString("google_client_id", "740464208491-r63hohlm9o2lvc40f8gffitrbe6pceq8.apps.googleusercontent.com");
-        initGoogleSignIn(cachedClientId);
+        // 3. Initialize Google Sign-In SDK with the strict Firebase Web Client ID
+        initGoogleSignIn("740464208491-r63hohlm9o2lvc40f8gffitrbe6pceq8.apps.googleusercontent.com");
 
         // 4. Setup Back Button Callback
         setupBackButton();
@@ -341,11 +339,8 @@ public class MainActivity extends AppCompatActivity {
                 "var cb = document.getElementById('privacy-checkbox'); " +
                 "if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }", null);
 
-            SharedPreferences prefs1 = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-            String clientId = prefs1.getString("google_client_id", "740464208491-r63hohlm9o2lvc40f8gffitrbe6pceq8.apps.googleusercontent.com");
-
             if (mGoogleSignInClient == null) {
-                initGoogleSignIn(clientId);
+                initGoogleSignIn("740464208491-r63hohlm9o2lvc40f8gffitrbe6pceq8.apps.googleusercontent.com");
             }
 
             if (mGoogleSignInClient != null) {
@@ -509,37 +504,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void checkAndExtractClientId(String url) {
-        if (url == null) return;
-        if (url.contains("client_id=") && url.contains("apps.googleusercontent.com")) {
-            try {
-                Uri uri = Uri.parse(url);
-                String clientId = uri.getQueryParameter("client_id");
-                if (clientId != null && !clientId.isEmpty()) {
-                    SharedPreferences prefs = getSharedPreferences("YaraanPrefs", MODE_PRIVATE);
-                    String savedClientId = prefs.getString("google_client_id", null);
-                    if (savedClientId == null || !savedClientId.equals(clientId)) {
-                        prefs.edit().putString("google_client_id", clientId).apply();
-                        initGoogleSignIn(clientId);
-
-                        // Cold start capture successful! Cancel popup dialog and trigger the native accounts chooser immediately
-                        runOnUiThread(() -> {
-                            if (popupDialog != null && popupDialog.isShowing()) {
-                                popupDialog.dismiss();
-                                popupDialog = null;
-                            }
-                            if (popupWebView != null) {
-                                popupWebView.destroy();
-                                popupWebView = null;
-                            }
-                            resetLoginButtons();
-                            launchGoogleSignInIntent();
-                        });
-                    }
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
+        // Strict Web Client ID enforced. Dynamic extraction is disabled to prevent mismatched IDs.
     }
 
     @SuppressLint("SetJavaScriptEnabled")
